@@ -14,6 +14,7 @@ public enum Resolution
 [RequireComponent(typeof(Image))]
 public partial class CellularGravity : MonoBehaviour
 {
+	public Text DeltaTime;
 	public Image[] NodeImages = new Image[0];
 	public Resolution Resolution = Resolution._81x81;
 	public float InitialMassMultiplier = 1.0f;
