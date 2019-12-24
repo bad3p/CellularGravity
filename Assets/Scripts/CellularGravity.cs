@@ -14,6 +14,7 @@ public enum Resolution
 [RequireComponent(typeof(Image))]
 public partial class CellularGravity : MonoBehaviour
 {
+	public Image[] NodeImages = new Image[0];
 	public Resolution Resolution = Resolution._81x81;
 	public float InitialMassMultiplier = 1.0f;
 	public float CellSize = 1.0f;
@@ -22,7 +23,6 @@ public partial class CellularGravity : MonoBehaviour
 	public Texture2D ColorTexture;
 	public Texture2D MassTexture;
 	public Gradient MassGradient;
-	public bool Test;
 	
 	public struct Cell
 	{
@@ -60,7 +60,8 @@ public partial class CellularGravity : MonoBehaviour
 	private int _width;
 	private int _height;
 	private Image _image;
-	private Material _material;
+	private Material _gridMaterial;
+	private Material[] _nodeMaterials = new Material[0];
 	private Cell[] _cells = new Cell[0];
 	private Node[] _nodes = new Node[0];
 	private Grid[] _grids = new Grid[0];
@@ -69,7 +70,8 @@ public partial class CellularGravity : MonoBehaviour
 	private ComputeBuffer _nodeBuffer = null;
 	private ComputeBuffer _gridBuffer = null;
 	private ComputeShader _computeShader = null;
-	private RenderTexture _renderTexture = null;		
+	private RenderTexture _gridRenderTexture = null;
+	private RenderTexture[] _nodeRenderTextures = new RenderTexture[0];
 
 	private Texture2D GetReadableTexture(Texture2D src, int width, int height)
 	{
@@ -88,9 +90,18 @@ public partial class CellularGravity : MonoBehaviour
 	private void Awake()
 	{
 		_image = GetComponent<Image>();
+
+		for (int i = 0; i < NodeImages.Length; i++)
+		{
+			if (NodeImages[i])
+			{
+				NodeImages[i].material = new Material( Shader.Find("Unlit/Texture") );
+				NodeImages[i].material.mainTexture = Texture2D.blackTexture;
+			}
+		}
 		
-		_material = new Material( Shader.Find("Unlit/Texture") );
-		_image.material = _material;
+		_gridMaterial = new Material( Shader.Find("Unlit/Texture") );
+		_image.material = _gridMaterial;
 		_image.SetMaterialDirty();
 		
 		string[] resolution = Resolution.ToString().Trim( '_' ).Split( 'x' );
@@ -103,12 +114,12 @@ public partial class CellularGravity : MonoBehaviour
 		Texture2D massTexture = GetReadableTexture(MassTexture, _width, _height);
 		Texture2D colorTexture = GetReadableTexture(ColorTexture, _width, _height);
 
-		_renderTexture = new RenderTexture( _width, _height, 0, RenderTextureFormat.ARGBHalf );		
-		_renderTexture.enableRandomWrite = true;
-		_renderTexture.filterMode = FilterMode.Bilinear;
-		_renderTexture.Create();
+		_gridRenderTexture = new RenderTexture( _width, _height, 0, RenderTextureFormat.ARGBHalf );		
+		_gridRenderTexture.enableRandomWrite = true;
+		_gridRenderTexture.filterMode = FilterMode.Point;
+		_gridRenderTexture.Create();
 		
-		_material.mainTexture = _renderTexture;
+		_gridMaterial.mainTexture = _gridRenderTexture;
 
 		int nodeBufferLength = 0;
 		int gridBufferLength = 0;
@@ -120,6 +131,35 @@ public partial class CellularGravity : MonoBehaviour
 			gridBufferLength++;
 			width /= 3;
 			height /= 3;
+		}
+
+		_nodeRenderTextures = new RenderTexture[nodeBufferLength+1];
+		_nodeMaterials = new Material[nodeBufferLength+1];
+		int nodeRenderTextureWidth = _width / 3;
+		int nodeRenderTextureHeight = _height / 3;
+		for (int i = 0; i < nodeBufferLength + 1; i++)
+		{
+			_nodeRenderTextures[i] = new RenderTexture( nodeRenderTextureWidth, nodeRenderTextureHeight, 0, RenderTextureFormat.ARGBHalf );
+			_nodeRenderTextures[i].enableRandomWrite = true;
+			_nodeRenderTextures[i].filterMode = FilterMode.Point;
+			_nodeRenderTextures[i].Create();
+
+			if (nodeRenderTextureWidth == 1 || nodeRenderTextureHeight == 1)
+			{
+				break;
+			}
+			
+			nodeRenderTextureWidth /= 3;
+			nodeRenderTextureHeight /= 3;
+			
+			_nodeMaterials[i] = new Material( Shader.Find("Unlit/Texture") );
+			_nodeMaterials[i].mainTexture = _nodeRenderTextures[i];
+
+			if (NodeImages.Length > i && NodeImages[i] != null)
+			{
+				NodeImages[i].material = _nodeMaterials[i];
+				NodeImages[i].SetMaterialDirty();
+			}
 		}
 			
 		_cells = new Cell[_width*_height];
@@ -181,18 +221,21 @@ public partial class CellularGravity : MonoBehaviour
 				
 		_computeShader.SetBuffer( drawMasses, "inOutCellBuffer", _inCellBuffer );
 		_computeShader.SetBuffer( drawMasses, "gridBuffer", _gridBuffer );
-		_computeShader.SetTexture( drawMasses, "renderTexture", _renderTexture);
+		_computeShader.SetTexture( drawMasses, "renderTexture", _gridRenderTexture);
 		_computeShader.Dispatch( drawMasses, numberOfGroups, 1, 1 );
-		
-		
-		/*
-		_computeShader.SetInt("gridIndex", 1);
-		_computeShader.SetFloat("cellSize", CellSize);
-		_computeShader.SetBuffer( drawNodes, "inOutCellBuffer", _inCellBuffer );
-		_computeShader.SetBuffer( drawNodes, "nodeBuffer", _nodeBuffer );
-		_computeShader.SetBuffer( drawNodes, "gridBuffer", _gridBuffer );
-		_computeShader.SetTexture( drawNodes, "renderTexture", _renderTexture);
-		_computeShader.Dispatch( drawNodes, numberOfGroups, 1, 1 );
-		*/
+
+		for (int i = 0; i < _nodeRenderTextures.Length; i++)
+		{
+			if (_nodeRenderTextures[i])
+			{
+				_computeShader.SetInt("gridIndex", i + 1);
+				_computeShader.SetFloat("cellSize", CellSize);
+				_computeShader.SetBuffer(drawNodes, "inOutCellBuffer", _inCellBuffer);
+				_computeShader.SetBuffer(drawNodes, "nodeBuffer", _nodeBuffer);
+				_computeShader.SetBuffer(drawNodes, "gridBuffer", _gridBuffer);
+				_computeShader.SetTexture(drawNodes, "renderTexture", _nodeRenderTextures[i]);
+				_computeShader.Dispatch(drawNodes, numberOfGroups, 1, 1);
+			}
+		}
 	}
 }

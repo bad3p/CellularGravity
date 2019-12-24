@@ -4,3 +4,6 @@
 .idea/.idea.CellularGravity/.idea/modules.xml
 .idea/.idea.CellularGravity/.idea/workspace.xml
 /Library
+*.log
+*.cache
+Temp/*

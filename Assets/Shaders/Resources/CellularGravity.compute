@@ -762,16 +762,16 @@ void DrawNodes(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
     
-    if( i < gridBuffer[0].length )
+    if( i < gridBuffer[gridIndex].length )
     {
-        int y = i / gridBuffer[0].width;
-        int x = i - y * gridBuffer[0].width;        
+        int y = i / gridBuffer[gridIndex].width;
+        int x = i - y * gridBuffer[gridIndex].width;        
         
         int2 xy = int2( x,y );
         
-        int gridScale = pow( 3, gridIndex );
-        int nodeX = x / gridScale;
-        int nodeY = y / gridScale;
+        //int gridScale = pow( 3, gridIndex );
+        int nodeX = x;// / gridScale;
+        int nodeY = y;// / gridScale;
         int nodeIndex = nodeY * gridBuffer[gridIndex].width + nodeX + gridBuffer[gridIndex].start; 
        
         const float Mass0 = 0.01;
