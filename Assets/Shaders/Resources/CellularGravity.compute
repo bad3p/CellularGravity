@@ -739,7 +739,7 @@ void DrawVelocities(uint3 id : SV_DispatchThreadID)
         
         int2 xy = int2( x,y );
         
-        const float VelocityScale = 1.0;
+        const float VelocityScale = 10.0;
        
         float2 vel = inOutCellBuffer[i].vel;
         float mag = length(vel);
@@ -747,7 +747,14 @@ void DrawVelocities(uint3 id : SV_DispatchThreadID)
                
         vel = ( vel + 1.0 ) * 0.5;
         vel *= saturate( mag / VelocityScale );
-        vel *= sign( inOutCellBuffer[i].mass );      
+        vel *= sign( inOutCellBuffer[i].mass );
+        
+        const float Mass0 = 0.0f;
+        const float Mul0 = 0.0f;
+        const float Mass1 = 0.1f;
+        const float Mul1 = 1.0f;
+        float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
+        vel *= lerp( Mul0, Mul1, factor );      
        
         renderTexture[xy] = half4( vel, 0, 1 );           
     }

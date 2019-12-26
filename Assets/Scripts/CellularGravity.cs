@@ -11,6 +11,12 @@ public enum Resolution
 	_2187x2187
 };
 
+public enum DisplayMode
+{
+	Masses,
+	Velocities
+};
+
 [RequireComponent(typeof(Image))]
 public partial class CellularGravity : MonoBehaviour
 {
@@ -25,6 +31,7 @@ public partial class CellularGravity : MonoBehaviour
 	public float Density = 1.0f;
 	public float MaxCellOffset = 0.1f;
 	public float MaxDeltaTime = 1.0f;
+	public DisplayMode DisplayMode = DisplayMode.Masses; 
 	[Header("Seed")]
 	public Texture2D ColorTexture;
 	public Texture2D MassTexture;
@@ -215,6 +222,16 @@ public partial class CellularGravity : MonoBehaviour
 		_gridBuffer.Release();
 	}
 
+	public void OnShowMasses(string arg)
+	{
+		DisplayMode = DisplayMode.Masses;
+	}
+	
+	public void OnShowVelocities(string arg)
+	{
+		DisplayMode = DisplayMode.Velocities;
+	}
+
 	private void Update()
 	{
 		SimulateGPU();
@@ -224,11 +241,24 @@ public partial class CellularGravity : MonoBehaviour
 		int drawNodes = _computeShader.FindKernel( "DrawNodes" );
 		
 		int numberOfGroups = Mathf.CeilToInt( (float)(_width*_height) / GPUGroupSize );
-				
-		_computeShader.SetBuffer( drawMasses, "inOutCellBuffer", _inCellBuffer );
-		_computeShader.SetBuffer( drawMasses, "gridBuffer", _gridBuffer );
-		_computeShader.SetTexture( drawMasses, "renderTexture", _gridRenderTexture);
-		_computeShader.Dispatch( drawMasses, numberOfGroups, 1, 1 );
+
+		switch (DisplayMode)
+		{
+			case DisplayMode.Masses:
+				_computeShader.SetBuffer(drawMasses, "inOutCellBuffer", _inCellBuffer);
+				_computeShader.SetBuffer(drawMasses, "gridBuffer", _gridBuffer);
+				_computeShader.SetTexture(drawMasses, "renderTexture", _gridRenderTexture);
+				_computeShader.Dispatch(drawMasses, numberOfGroups, 1, 1);
+				break;
+			case DisplayMode.Velocities:
+				_computeShader.SetBuffer(drawVelocities, "inOutCellBuffer", _inCellBuffer);
+				_computeShader.SetBuffer(drawVelocities, "gridBuffer", _gridBuffer);
+				_computeShader.SetTexture(drawVelocities, "renderTexture", _gridRenderTexture);
+				_computeShader.Dispatch(drawVelocities, numberOfGroups, 1, 1);
+				break;
+			default:
+				break;
+		}
 
 		for (int i = 0; i < _nodeRenderTextures.Length; i++)
 		{
