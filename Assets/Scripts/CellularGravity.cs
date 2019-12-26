@@ -14,13 +14,18 @@ public enum Resolution
 [RequireComponent(typeof(Image))]
 public partial class CellularGravity : MonoBehaviour
 {
+	[Header("UI")]
 	public Text DeltaTime;
 	public Image[] NodeImages = new Image[0];
+	[Header("Settings")]
 	public Resolution Resolution = Resolution._81x81;
 	public float InitialMassMultiplier = 1.0f;
 	public float CellSize = 1.0f;
 	public float Gravity = 9.8f;
 	public float Density = 1.0f;
+	public float MaxCellOffset = 0.1f;
+	public float MaxDeltaTime = 1.0f;
+	[Header("Seed")]
 	public Texture2D ColorTexture;
 	public Texture2D MassTexture;
 	public Gradient MassGradient;

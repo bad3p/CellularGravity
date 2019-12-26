@@ -119,11 +119,10 @@ public partial class CellularGravity : MonoBehaviour
         _computeShader.SetBuffer(_computeGravityForce, "gridBuffer", _gridBuffer);
         _computeShader.Dispatch(_computeGravityForce, numberOfCellGroups, 1, 1);
         
-        const float MaxCellOffset = 0.1f;
         float maxExpansionVel = maxMass * Density / (CellSize * CellSize);
         float deltaTime = (maxVel > 0) ? (CellSize / maxVel * MaxCellOffset) : Time.fixedDeltaTime;
         deltaTime = Mathf.Min(deltaTime, (CellSize / maxExpansionVel * MaxCellOffset));
-        if (deltaTime > Time.fixedDeltaTime) deltaTime = Time.fixedDeltaTime;
+        if (deltaTime > MaxDeltaTime) deltaTime = MaxDeltaTime;
         DeltaTime.text = deltaTime.ToString("F5"); 
 
         _computeShader.SetFloat("deltaTime", deltaTime);
