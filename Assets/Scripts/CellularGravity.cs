@@ -14,7 +14,8 @@ public enum Resolution
 public enum DisplayMode
 {
 	Masses,
-	Velocities
+	Momentums,
+	Forces
 };
 
 [RequireComponent(typeof(Image))]
@@ -227,9 +228,14 @@ public partial class CellularGravity : MonoBehaviour
 		DisplayMode = DisplayMode.Masses;
 	}
 	
-	public void OnShowVelocities(string arg)
+	public void OnShowMomentums(string arg)
 	{
-		DisplayMode = DisplayMode.Velocities;
+		DisplayMode = DisplayMode.Momentums;
+	}
+	
+	public void OnShowForces(string arg)
+	{
+		DisplayMode = DisplayMode.Forces;
 	}
 
 	private void Update()
@@ -237,7 +243,8 @@ public partial class CellularGravity : MonoBehaviour
 		SimulateGPU();
 		
 		int drawMasses = _computeShader.FindKernel( "DrawMasses" );
-		int drawVelocities = _computeShader.FindKernel( "DrawVelocities" );
+		int drawMomentums = _computeShader.FindKernel( "DrawMomentums" );
+		int drawForces = _computeShader.FindKernel( "DrawForces" );
 		int drawNodes = _computeShader.FindKernel( "DrawNodes" );
 		
 		int numberOfGroups = Mathf.CeilToInt( (float)(_width*_height) / GPUGroupSize );
@@ -250,11 +257,17 @@ public partial class CellularGravity : MonoBehaviour
 				_computeShader.SetTexture(drawMasses, "renderTexture", _gridRenderTexture);
 				_computeShader.Dispatch(drawMasses, numberOfGroups, 1, 1);
 				break;
-			case DisplayMode.Velocities:
-				_computeShader.SetBuffer(drawVelocities, "inOutCellBuffer", _inCellBuffer);
-				_computeShader.SetBuffer(drawVelocities, "gridBuffer", _gridBuffer);
-				_computeShader.SetTexture(drawVelocities, "renderTexture", _gridRenderTexture);
-				_computeShader.Dispatch(drawVelocities, numberOfGroups, 1, 1);
+			case DisplayMode.Momentums:
+				_computeShader.SetBuffer(drawMomentums, "inOutCellBuffer", _inCellBuffer);
+				_computeShader.SetBuffer(drawMomentums, "gridBuffer", _gridBuffer);
+				_computeShader.SetTexture(drawMomentums, "renderTexture", _gridRenderTexture);
+				_computeShader.Dispatch(drawMomentums, numberOfGroups, 1, 1);
+				break;
+			case DisplayMode.Forces:
+				_computeShader.SetBuffer(drawForces, "inOutCellBuffer", _inCellBuffer);
+				_computeShader.SetBuffer(drawForces, "gridBuffer", _gridBuffer);
+				_computeShader.SetTexture(drawForces, "renderTexture", _gridRenderTexture);
+				_computeShader.Dispatch(drawForces, numberOfGroups, 1, 1);
 				break;
 			default:
 				break;

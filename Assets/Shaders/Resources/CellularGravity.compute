@@ -725,10 +725,10 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel DrawVelocities
+#pragma kernel DrawMomentums
 
 [numthreads(GROUPSIZE,1,1)]
-void DrawVelocities(uint3 id : SV_DispatchThreadID)
+void DrawMomentums(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
         
@@ -757,6 +757,43 @@ void DrawVelocities(uint3 id : SV_DispatchThreadID)
         vel *= lerp( Mul0, Mul1, factor );      
        
         renderTexture[xy] = half4( vel, 0, 1 );           
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawForces
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawForces(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+        
+    if( i < gridBuffer[0].length )
+    {        
+        int y = i / gridBuffer[0].width;
+        int x = i - y * gridBuffer[0].width;        
+        
+        int2 xy = int2( x,y );
+        
+        const float ForceScale = 0.1;
+       
+        float2 force = inOutCellBuffer[i].force;
+        float mag = length(force);
+        force = normalize(force);
+               
+        force = ( force + 1.0 ) * 0.5;
+        force *= saturate( mag / ForceScale );
+        force *= sign( inOutCellBuffer[i].mass );
+        
+        const float Mass0 = 0.0f;
+        const float Mul0 = 0.0f;
+        const float Mass1 = 0.1f;
+        const float Mul1 = 1.0f;
+        float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
+        force *= lerp( Mul0, Mul1, factor );
+       
+        renderTexture[xy] = half4( force, 0, 1 );           
     }
 }
 
