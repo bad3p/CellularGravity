@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using UnityEditor;
 using UnityEngine;
@@ -13,6 +14,7 @@ public partial class CellularGravity : MonoBehaviour
     private int _integrateVelocity;
     private int _momentumTransfer;
     private int _localExpansion;
+    private int _computeMassSAT;
     private int _scaleCells;
 
     private void FindKernels(ComputeShader computeShader)
@@ -23,6 +25,7 @@ public partial class CellularGravity : MonoBehaviour
         _integrateVelocity = computeShader.FindKernel( "IntegrateVelocity" );
         _momentumTransfer = computeShader.FindKernel( "MomentumTransfer" );
         _localExpansion = computeShader.FindKernel( "LocalExpansion" );
+        _computeMassSAT = computeShader.FindKernel( "ComputeMassSAT" );
         _scaleCells = computeShader.FindKernel( "ScaleCells" );      
     }
 
@@ -181,6 +184,109 @@ public partial class CellularGravity : MonoBehaviour
             Swap(ref _inCellBuffer, ref _outCellBuffer);
 
             CellSize = CellSize * (xSup - xInf) / _width;
+        }
+    }
+    
+    private void TestSummedAreaTables()
+    {
+        Cell[] cells = new Cell[_width * _height];
+        
+        int numCells = cells.Length;
+        for (int i = 0; i < numCells; i++)
+        {
+            int y = i / _width;
+            int x = i - y * _width;
+
+            cells[i].vel = Vector2.zero;
+            cells[i].pos = new Vector2( x * CellSize + CellSize/2, y * CellSize + CellSize/2 );
+            cells[i].mass = Random.Range(0.0f, 1.0f);
+            cells[i].color = Color.white;
+        }
+        
+        float[] cpuMassSAT = new float[_width * _height];        
+
+        for (int i = 0; i < _height; i++)
+        {
+            Vector3Int id = new Vector3Int( i,i,i );
+            ComputeSummedAreaTableCPU(id, cells, cpuMassSAT, _width, _height);
+        }
+        
+        ComputeBuffer cellBuffer = new ComputeBuffer( cells.Length, Cell.SizeOf );
+        ComputeBuffer massSATBuffer = new ComputeBuffer( cpuMassSAT.Length, sizeof(float) );
+        
+        cellBuffer.SetData(cells);
+        
+        _computeShader.SetInt("width", _width);
+        _computeShader.SetInt("height", _height);        
+        _computeShader.SetBuffer(_computeMassSAT, "inCellBuffer", cellBuffer);
+        _computeShader.SetBuffer(_computeMassSAT, "outMassSAT", massSATBuffer);
+        _computeShader.Dispatch(_computeMassSAT, 1, 1, 1);
+        
+        float[] gpuMassSAT = new float[_width * _height];
+        massSATBuffer.GetData(gpuMassSAT);
+        
+        cellBuffer.Release();			
+        massSATBuffer.Release();
+
+        const float Epsilon = 10.0f;
+        for (int i = 0; i < cpuMassSAT.Length; i++)
+        {
+            float error = Mathf.Abs(cpuMassSAT[i] - gpuMassSAT[i]);
+            if (error > Epsilon)
+            {
+                Debug.LogError( "CPU/GPU SAT error: " + error.ToString() + ", index: " + i );
+                break;
+            }
+        }
+        
+        PrintSAT("cpuMassSAT.txt", cpuMassSAT);
+        PrintSAT("gpuMassSAT.txt", gpuMassSAT);
+    }
+
+    void PrintSAT(string path, float[] sat)
+    {
+        string s = "";
+        for( int i=0; i<sat.Length; i++)
+        {
+            s += sat[i].ToString("F2");
+            s += " ";
+            if (i>0 && i % _width == 0)
+            {
+                s += "\n";
+            }
+        }
+        File.WriteAllText( path, s );
+    }
+
+    void ComputeSummedAreaTableCPU(Vector3Int id, Cell[] inCellBuffer, float[] outMassSAT, int width, int height)
+    {
+        int y = id.x;
+
+        if (y == 0)
+        {
+            outMassSAT[0] = inCellBuffer[0].mass;
+            
+            for (int x = 1; x < width; x++)
+            {
+                int i = x;
+                outMassSAT[i] = outMassSAT[i - 1] + inCellBuffer[i].mass;
+            }
+        }
+        else if (y < height)
+        {
+            int i = y * width;
+            int it = (y-1) * width;
+            
+            outMassSAT[i] = inCellBuffer[i].mass + outMassSAT[it];
+            
+            for (int x = 1; x < width; x++)
+            {
+                int j = i + x;
+                int jl = i + x - 1;
+                int jt = it + x;
+                int jtl = it + x - 1;
+                outMassSAT[j] = inCellBuffer[j].mass + outMassSAT[jt] + outMassSAT[jl] - outMassSAT[jtl];
+            }
         }
     }
 }

@@ -35,6 +35,8 @@ RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
 RWStructuredBuffer<Node> nodeBuffer;
 RWStructuredBuffer<Grid> gridBuffer;
+RWStructuredBuffer<float> inMassSAT;
+RWStructuredBuffer<float> outMassSAT;
 RWTexture2D<half4> renderTexture; 
 
 float gravity;
@@ -44,6 +46,8 @@ float deltaTime;
 float density;
 int numGrids;
 int gridIndex;
+int width;
+int height;
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -596,6 +600,50 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
         outCellBuffer[i].color = inCellBuffer[i].color;
         outCellBuffer[i].vel = inCellBuffer[i].vel;
 	    outCellBuffer[i].pos = inCellBuffer[i].pos;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ComputeMassSAT
+
+[numthreads(1,1,1)]
+void ComputeMassSAT(uint3 id : SV_DispatchThreadID)
+{
+    //int y = id.x;
+    if( id.x == 0 )
+    {    
+    for( int y=0; y<height; y++)
+    {
+    
+    if (y == 0)
+    {
+        outMassSAT[0] = inCellBuffer[0].mass;
+            
+        for (int x = 1; x < width; x++)
+        {
+            int i = x;
+            outMassSAT[i] = outMassSAT[i - 1] + inCellBuffer[i].mass;
+        }
+    }
+    else if (y < height)
+    {
+        int i = y * width;
+        int it = (y-1) * width;
+            
+        outMassSAT[i] = inCellBuffer[i].mass + outMassSAT[it];
+            
+        for (int x = 1; x < width; x++)
+        {
+            int j = i + x;
+            int jl = i + x - 1;
+            int jt = it + x;
+            int jtl = it + x - 1;
+            outMassSAT[j] = inCellBuffer[j].mass + outMassSAT[jt] + outMassSAT[jl] - outMassSAT[jtl];
+        }
+    }
+    
+    }
     }
 }
 

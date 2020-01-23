@@ -567,7 +567,7 @@ MonoBehaviour:
   - {fileID: 2122908551}
   - {fileID: 1170501496}
   - {fileID: 1779793720}
-  Resolution: 2
+  Resolution: 0
   InitialMassMultiplier: 1
   CellSize: 10
   Gravity: 9.8

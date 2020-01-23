@@ -208,6 +208,8 @@ public partial class CellularGravity : MonoBehaviour
 
 		FindKernels( _computeShader );
 		Initialize( massTexture, colorTexture );
+		
+		TestSummedAreaTables();
 	}
 
 	private void Start()
