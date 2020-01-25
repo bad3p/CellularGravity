@@ -1,8 +1,10 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using UnityEditor;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 public partial class CellularGravity : MonoBehaviour
 {
@@ -15,8 +17,8 @@ public partial class CellularGravity : MonoBehaviour
     private int _momentumTransfer;
     private int _localExpansion;
     private int _initMassSAT;
+    private int _transposeMassSAT;
     private int _computeMassSATVP;
-    private int _computeMassSATHP;
     private int _scaleCells;
 
     private void FindKernels(ComputeShader computeShader)
@@ -28,8 +30,8 @@ public partial class CellularGravity : MonoBehaviour
         _momentumTransfer = computeShader.FindKernel( "MomentumTransfer" );
         _localExpansion = computeShader.FindKernel( "LocalExpansion" );
         _initMassSAT = computeShader.FindKernel( "InitMassSAT" );
+        _transposeMassSAT = computeShader.FindKernel( "TransposeMassSAT" );
         _computeMassSATVP = computeShader.FindKernel( "ComputeMassSATVP" );
-        _computeMassSATHP = computeShader.FindKernel( "ComputeMassSATHP" );
         _scaleCells = computeShader.FindKernel( "ScaleCells" );      
     }
 
@@ -233,13 +235,14 @@ public partial class CellularGravity : MonoBehaviour
         float[] cpuMassSAT = new float[_width * _height];
         float[] gpuMassSAT = new float[_width * _height];
 
-        float cpuT0 = GetPerformanceTime();
+        var cpuStopWatch = new Stopwatch();
+        cpuStopWatch.Start();
         for (int i = 0; i < _height; i++)
         {
             Vector3Int id = new Vector3Int( i,i,i );
             ComputeSummedAreaTableCPU(id, cells, cpuMassSAT, _width, _height);
         }
-        float cpuT1 = GetPerformanceTime();
+        cpuStopWatch.Stop();
         
         ComputeBuffer cellBuffer = new ComputeBuffer( cells.Length, Cell.SizeOf );
         ComputeBuffer inMassSATBuffer = new ComputeBuffer( cpuMassSAT.Length, sizeof(float) );
@@ -247,7 +250,8 @@ public partial class CellularGravity : MonoBehaviour
         
         cellBuffer.SetData(cells);
         
-        float gpuT0 = GetPerformanceTime();
+        var gpuStopWatch = new Stopwatch();
+        gpuStopWatch.Start();
         int initMassSATGroupCount = Mathf.CeilToInt( (float)(_cells.Length) / GPUGroupSize );
         _computeShader.SetInt("width", _width);
         _computeShader.SetInt("height", _height);        
@@ -256,37 +260,41 @@ public partial class CellularGravity : MonoBehaviour
         _computeShader.Dispatch(_initMassSAT, initMassSATGroupCount, 1, 1);
         Swap(ref outMassSATBuffer, ref inMassSATBuffer);
         
-        int passCount = Mathf.RoundToInt(Mathf.Log(_width, 3) );
-        int passGroupCount = Mathf.CeilToInt( (float)(_cells.Length) / GPUGroupSize );  
-        for (int pass = 0; pass < passCount; pass++)
-        {
-            _computeShader.SetInt("width", _width);
-            _computeShader.SetInt("height", _height);
-            _computeShader.SetInt("passOffset", Mathf.RoundToInt(Mathf.Pow(3,pass) ) );
-            _computeShader.SetBuffer(_computeMassSATVP, "inMassSAT", inMassSATBuffer);
-            _computeShader.SetBuffer(_computeMassSATVP, "outMassSAT", outMassSATBuffer);
-            _computeShader.Dispatch(_computeMassSATVP, passGroupCount, 1, 1);
-            Swap(ref outMassSATBuffer, ref inMassSATBuffer);
-        }
-
-        passCount = Mathf.RoundToInt(Mathf.Log(_height, 3) );
-        passGroupCount = Mathf.CeilToInt( (float)(_cells.Length) / GPUGroupSize );  
-        for (int pass = 0; pass < passCount; pass++)
-        {
-            _computeShader.SetInt("width", _width);
-            _computeShader.SetInt("height", _height);
-            _computeShader.SetInt("passOffset", Mathf.RoundToInt(Mathf.Pow(3,pass) ) );
-            _computeShader.SetBuffer(_computeMassSATHP, "inMassSAT", inMassSATBuffer);
-            _computeShader.SetBuffer(_computeMassSATHP, "outMassSAT", outMassSATBuffer);
-            _computeShader.Dispatch(_computeMassSATHP, passGroupCount, 1, 1);
-            Swap(ref outMassSATBuffer, ref inMassSATBuffer);
-        }
-
-        inMassSATBuffer.GetData(gpuMassSAT);
-        float gpuT1 = GetPerformanceTime();
+        int computeMassSATGroupCount = Mathf.CeilToInt( (float)(_height) / GPUGroupSize );  
+        _computeShader.SetInt("width", _width);
+        _computeShader.SetInt("height", _height);
+        _computeShader.SetBuffer(_computeMassSATVP, "inMassSAT", inMassSATBuffer);
+        _computeShader.SetBuffer(_computeMassSATVP, "outMassSAT", outMassSATBuffer);
+        _computeShader.Dispatch(_computeMassSATVP, computeMassSATGroupCount, 1, 1);
+        Swap(ref outMassSATBuffer, ref inMassSATBuffer);
         
-        Debug.Log( "CPU-SAT: " + (cpuT1-cpuT0).ToString("F8") );
-        Debug.Log( "GPU-SAT: " + (gpuT1-gpuT0).ToString("F8") );
+        int transposeMassSATGroupCount = Mathf.CeilToInt( (float)(_cells.Length) / GPUGroupSize );
+        _computeShader.SetInt("width", _width);
+        _computeShader.SetInt("height", _height);
+        _computeShader.SetBuffer(_transposeMassSAT, "inMassSAT", inMassSATBuffer);
+        _computeShader.SetBuffer(_transposeMassSAT, "outMassSAT", outMassSATBuffer);
+        _computeShader.Dispatch(_transposeMassSAT, transposeMassSATGroupCount, 1, 1);
+        Swap(ref outMassSATBuffer, ref inMassSATBuffer);
+
+        _computeShader.SetInt("width", _width);
+        _computeShader.SetInt("height", _height);
+        _computeShader.SetBuffer(_computeMassSATVP, "inMassSAT", inMassSATBuffer);
+        _computeShader.SetBuffer(_computeMassSATVP, "outMassSAT", outMassSATBuffer);
+        _computeShader.Dispatch(_computeMassSATVP, computeMassSATGroupCount, 1, 1);
+        Swap(ref outMassSATBuffer, ref inMassSATBuffer);
+        
+        _computeShader.SetInt("width", _width);
+        _computeShader.SetInt("height", _height);
+        _computeShader.SetBuffer(_transposeMassSAT, "inMassSAT", inMassSATBuffer);
+        _computeShader.SetBuffer(_transposeMassSAT, "outMassSAT", outMassSATBuffer);
+        _computeShader.Dispatch(_transposeMassSAT, transposeMassSATGroupCount, 1, 1);
+        Swap(ref outMassSATBuffer, ref inMassSATBuffer);
+        gpuStopWatch.Stop();
+        
+        inMassSATBuffer.GetData(gpuMassSAT);
+        
+        Debug.Log( "CPU-SAT: " + cpuStopWatch.ElapsedTicks );
+        Debug.Log( "GPU-SAT: " + gpuStopWatch.ElapsedTicks );
         
         cellBuffer.Release();			
         inMassSATBuffer.Release();

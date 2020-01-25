@@ -623,60 +623,43 @@ void InitMassSAT(uint3 id : SV_DispatchThreadID)
 
 //////////////////////////////////////////////////////////////////////////////////////
 
+#pragma kernel TransposeMassSAT
+
+[numthreads(GROUPSIZE,1,1)]
+void TransposeMassSAT(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+    
+    if( i < width*height )
+    {
+        int y = i / width;
+        int x = i - y * width;
+        int j = x * height + y; 
+    
+        outMassSAT[i] = inMassSAT[j];
+    }    
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
 #pragma kernel ComputeMassSATVP
 
 [numthreads(GROUPSIZE,1,1)]
 void ComputeMassSATVP(uint3 id : SV_DispatchThreadID)
 {
-    int i = int(id.x);
+    int y = int(id.x);
     
-    if (i < width*height)
-    {        
-        int y = i / width;
-        int x = i - y * width;
-        
-        outMassSAT[i] = inMassSAT[i];            
-            
-        int x1 = x - passOffset;
-        if( x1 >= 0 )
-        {
-            outMassSAT[i] += inMassSAT[y * width + x1];
-        }
-            
-        int x2 = x - 2 * passOffset;
-        if( x2 >= 0 )
-        {
-            outMassSAT[i] += inMassSAT[y * width + x2];
-        }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel ComputeMassSATHP
-
-[numthreads(GROUPSIZE,1,1)]
-void ComputeMassSATHP(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);
-    
-    if (i < width*height)
+    if (y < height)
     {
-        int y = i / width;
-        int x = i - y * width;
+        int index = y*width;
+        float accumulatedMass = inMassSAT[index]; 
+        outMassSAT[index] = accumulatedMass;
         
-        outMassSAT[i] = inMassSAT[i];
-                    
-        int y1 = y - passOffset;
-        if( y1 >= 0 )
+        index++; 
+        for( int x=1; x<width; x++, index++)
         {
-            outMassSAT[i] += inMassSAT[y1 * width + x];
-        }
-            
-        int y2 = y - 2 * passOffset;
-        if( y2 >= 0 )
-        {
-            outMassSAT[i] += inMassSAT[y2 * width + x];
+            accumulatedMass += inMassSAT[index];
+            outMassSAT[index] = accumulatedMass;
         }
     }
 }
