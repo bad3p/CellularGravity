@@ -15,7 +15,8 @@ public enum DisplayMode
 {
 	Masses,
 	Momentums,
-	Forces
+	Forces,
+	MassSAT
 };
 
 [RequireComponent(typeof(Image))]
@@ -32,7 +33,8 @@ public partial class CellularGravity : MonoBehaviour
 	public float Density = 1.0f;
 	public float MaxCellOffset = 0.1f;
 	public float MaxDeltaTime = 1.0f;
-	public DisplayMode DisplayMode = DisplayMode.Masses; 
+	public DisplayMode DisplayMode = DisplayMode.Masses;
+	public bool UseSAT = true;
 	[Header("Seed")]
 	public Texture2D ColorTexture;
 	public Texture2D MassTexture;
@@ -83,6 +85,8 @@ public partial class CellularGravity : MonoBehaviour
 	private ComputeBuffer _outCellBuffer = null;
 	private ComputeBuffer _nodeBuffer = null;
 	private ComputeBuffer _gridBuffer = null;
+	private ComputeBuffer _inMassSATBuffer = null;
+	private ComputeBuffer _outMassSATBuffer = null;
 	private ComputeShader _computeShader = null;
 	private RenderTexture _gridRenderTexture = null;
 	private RenderTexture[] _nodeRenderTextures = new RenderTexture[0];
@@ -204,12 +208,12 @@ public partial class CellularGravity : MonoBehaviour
 		_outCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );
 		_nodeBuffer = new ComputeBuffer( _nodes.Length, Node.SizeOf );			
 		_gridBuffer = new ComputeBuffer( _grids.Length, Grid.SizeOf );
+		_inMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
+		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
 		_computeShader = Resources.Load<ComputeShader>( "CellularGravity" );
 
 		FindKernels( _computeShader );
 		Initialize( massTexture, colorTexture );
-		
-		TestSummedAreaTables();
 	}
 
 	private void Start()
@@ -223,6 +227,8 @@ public partial class CellularGravity : MonoBehaviour
 		_outCellBuffer.Release();
 		_nodeBuffer.Release();			
 		_gridBuffer.Release();
+		_inMassSATBuffer.Release();
+		_outMassSATBuffer.Release();
 	}
 
 	public void OnShowMasses(string arg)
@@ -239,6 +245,11 @@ public partial class CellularGravity : MonoBehaviour
 	{
 		DisplayMode = DisplayMode.Forces;
 	}
+	
+	public void OnShowMassSAT(string arg)
+	{
+		DisplayMode = DisplayMode.MassSAT;
+	}
 
 	private void Update()
 	{
@@ -248,6 +259,7 @@ public partial class CellularGravity : MonoBehaviour
 		int drawMomentums = _computeShader.FindKernel( "DrawMomentums" );
 		int drawForces = _computeShader.FindKernel( "DrawForces" );
 		int drawNodes = _computeShader.FindKernel( "DrawNodes" );
+		int drawMassSAT = _computeShader.FindKernel( "DrawMassSAT" );
 		
 		int numberOfGroups = Mathf.CeilToInt( (float)(_width*_height) / GPUGroupSize );
 
@@ -270,6 +282,12 @@ public partial class CellularGravity : MonoBehaviour
 				_computeShader.SetBuffer(drawForces, "gridBuffer", _gridBuffer);
 				_computeShader.SetTexture(drawForces, "renderTexture", _gridRenderTexture);
 				_computeShader.Dispatch(drawForces, numberOfGroups, 1, 1);
+				break;
+			case DisplayMode.MassSAT:
+				_computeShader.SetBuffer(drawMassSAT, "inOutMassSATBuffer", _inMassSATBuffer);
+				_computeShader.SetBuffer(drawMassSAT, "gridBuffer", _gridBuffer);
+				_computeShader.SetTexture(drawMassSAT, "renderTexture", _gridRenderTexture);
+				_computeShader.Dispatch(drawMassSAT, numberOfGroups, 1, 1);
 				break;
 			default:
 				break;

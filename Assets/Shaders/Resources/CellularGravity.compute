@@ -35,8 +35,9 @@ RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
 RWStructuredBuffer<Node> nodeBuffer;
 RWStructuredBuffer<Grid> gridBuffer;
-RWStructuredBuffer<float> inMassSAT;
-RWStructuredBuffer<float> outMassSAT;
+RWStructuredBuffer<float> inMassSATBuffer;
+RWStructuredBuffer<float> outMassSATBuffer;
+RWStructuredBuffer<float> inOutMassSATBuffer;
 RWTexture2D<half4> renderTexture; 
 
 float gravity;
@@ -48,7 +49,6 @@ int numGrids;
 int gridIndex;
 int width;
 int height;
-int passOffset;
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -262,10 +262,10 @@ void AccumulateNodeMasses(uint3 id : SV_DispatchThreadID)
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel ComputeGravityForce
+#pragma kernel ComputeGravityForceWithNodes
 
 [numthreads(GROUPSIZE,1,1)]
-void ComputeGravityForce(uint3 id : SV_DispatchThreadID)
+void ComputeGravityForceWithNodes(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
     
@@ -407,6 +407,98 @@ void ComputeGravityForce(uint3 id : SV_DispatchThreadID)
                             {
                                 force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );
                             }                            
+                        }
+                    }
+                }
+            }
+        }
+                
+        inOutCellBuffer[i].force = force;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ComputeGravityForceWithSAT
+
+[numthreads(GROUPSIZE,1,1)]
+void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+    
+    int length0 = gridBuffer[0].length;
+    
+    if( i < length0 )
+    {     
+        int width0 = gridBuffer[0].width;
+        int height0 = gridBuffer[0].height;
+                     
+        int y0 = i / width0;
+        int x0 = i - y0 * width0;
+
+        float2 p0 = inOutCellBuffer[i].pos;
+        float m0 = inOutCellBuffer[i].mass;
+
+        float2 force = float2( 0, 0 );
+                
+        for (int dy0 = -1; dy0 <= 1; dy0++)
+        {
+            for (int dx0 = -1; dx0 <= 1; dx0++)
+            {
+                if ( !(dy0 == 0 && dx0 == 0) )
+                {
+                    int y1 = y0 + dy0;
+                    int x1 = x0 + dx0;
+                        
+                    if (x1 >= 0 && x1 < width0 && y1 >= 0 && y1 < height0)
+                    {
+                        int j = y1 * width0 + x1;
+                        
+                        float2 p1 = inOutCellBuffer[j].pos;
+                        float m1 = inOutCellBuffer[j].mass;
+                        force += GravityForce( p0, m0, p1, m1 );
+                    }                        
+                }
+            }
+        }
+        
+        int offset = 3;
+        for( int k=1; k<numGrids; k++, offset *= 3 )
+        {
+            int halfOffset = offset / 2;
+        
+            for (int dy0 = -1; dy0 <= 1; dy0++)
+            {
+                for (int dx0 = -1; dx0 <= 1; dx0++)
+                {
+                    if ( !(dy0 == 0 && dx0 == 0) )
+                    {
+                        int y1 = y0 + dy0 * offset;
+                        int x1 = x0 + dx0 * offset;
+                        
+                        int yTop = max( 0, y1 - halfOffset - 1 );
+                        int xLeft = max( 0, x1 - halfOffset - 1 );                        
+                        int yBottom = min( height0 - 1, y1 + halfOffset );
+                        int xRight = min( width0 - 1, x1 + halfOffset );
+                        
+                        if( yTop < yBottom && xLeft < xRight )
+                        {
+                            int ilt = yTop * width0 + xLeft;
+                            int irt = yTop * width0 + xRight;
+                            int irb = yBottom * width0 + xRight;
+                            int ilb = yBottom * width0 + xLeft;
+                            
+                            float2 virtualCellPos = ( inOutCellBuffer[ilt].pos +
+                                                      inOutCellBuffer[irt].pos +
+                                                      inOutCellBuffer[irb].pos +
+                                                      inOutCellBuffer[ilb].pos ) / 4;
+                                                    
+                            float2 virtualCellMass = inOutMassSATBuffer[irb] -
+                                                     inOutMassSATBuffer[ilb] -
+                                                     inOutMassSATBuffer[irt] +
+                                                     inOutMassSATBuffer[ilt];
+                                                     
+                            force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );                                                   
                         }
                     }
                 }
@@ -573,7 +665,7 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
                             float overlappingAreaRatio = overlappingArea / expandedCellArea;
                             float dm = inCellBuffer[j].mass * overlappingAreaRatio;
                             outCellBuffer[i].mass += dm;
-                            float2 expVel = outCellBuffer[j].vel; // + normalize( inCellBuffer[i].pos - inCellBuffer[j].pos ) * expansionVel;
+                            float2 expVel = outCellBuffer[j].vel + normalize( inCellBuffer[i].pos - inCellBuffer[j].pos ) * expansionVel;
                             outCellBuffer[i].vel += expVel * dm;     
                         }
                     }
@@ -617,7 +709,7 @@ void InitMassSAT(uint3 id : SV_DispatchThreadID)
         
     if( i < length )
     {
-        outMassSAT[i] = inCellBuffer[i].mass;
+        outMassSATBuffer[i] = inCellBuffer[i].mass;
     }    
 }
 
@@ -636,109 +728,75 @@ void TransposeMassSAT(uint3 id : SV_DispatchThreadID)
         int x = i - y * width;
         int j = x * height + y; 
     
-        outMassSAT[i] = inMassSAT[j];
+        outMassSATBuffer[i] = inMassSATBuffer[j];
     }    
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel ComputeMassSATVP
+#pragma kernel ComputeMassSAT
 
 [numthreads(GROUPSIZE,1,1)]
-void ComputeMassSATVP(uint3 id : SV_DispatchThreadID)
+void ComputeMassSAT(uint3 id : SV_DispatchThreadID)
 {
     int y = int(id.x);
     
     if (y < height)
     {
         int index = y*width;
-        float accumulatedMass = inMassSAT[index]; 
-        outMassSAT[index] = accumulatedMass;
-        
-        index++; 
+        float accumulatedMass = inMassSATBuffer[index]; 
+        outMassSATBuffer[index] = accumulatedMass;        
+        index++;
+         
         for( int x=1; x<width; x++, index++)
         {
-            accumulatedMass += inMassSAT[index];
-            outMassSAT[index] = accumulatedMass;
+            accumulatedMass += inMassSATBuffer[index];
+            outMassSATBuffer[index] = accumulatedMass;
         }
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel ScaleCells
-
-int xInf;
-int yInf;
-int xSup;
-int ySup;
-float2 oldGridPos;
-float2 newGridPos;
-float scaledCellSize;
-float scaledCellArea;
+#pragma kernel DrawMassSAT
 
 [numthreads(GROUPSIZE,1,1)]
-void ScaleCells(uint3 id : SV_DispatchThreadID)
+void DrawMassSAT(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
-    
-    int length = gridBuffer[0].length; 
         
-    if( i < length )
-    {
-        int width = gridBuffer[0].width;
-        int height = gridBuffer[0].height;
+    if( i < gridBuffer[0].length )
+    {        
+        int y = i / gridBuffer[0].width;
+        int x = i - y * gridBuffer[0].width;        
         
-        int y0 = i / width;
-        int x0 = i - y0 * width;
+        int2 xy = int2( x,y );
         
-        outCellBuffer[i].pos = newGridPos + float2( x0 * scaledCellSize + scaledCellSize/2, y0 * scaledCellSize + scaledCellSize/2 );
+        const float Mass0 = 1;
+        const float Mass1 = 10;
+        const float Mass2 = 100;
+        const float Mass3 = 1000;
+        const float Mass4 = 10000;
         
-        float2 neighbourInf = outCellBuffer[i].pos - float2( scaledCellSize/2, scaledCellSize/2 );
-        float2 neighbourSup = outCellBuffer[i].pos + float2( scaledCellSize/2, scaledCellSize/2 );
-        neighbourInf -= oldGridPos;
-        neighbourSup -= oldGridPos;
-        
-        int localXInf = floor( neighbourInf.x / cellSize );
-        int localYInf = floor( neighbourInf.y / cellSize );
-        int localXSup = ceil( neighbourSup.x / cellSize );
-        int localYSup = ceil( neighbourSup.y / cellSize );
-        
-        float mass = 0;
-        float2 vel = float2( 0, 0 );
-        float4 color = float4( 0, 0, 0, 0 );
-        float2 force = float2( 0, 0 );
-        
-        for (int y1 = localYInf; y1 <= localYSup; y1++)
+        if( inOutMassSATBuffer[i] < Mass0 )
         {
-            for (int x1 = localXInf; x1 <= localXSup; x1++) 
-            {
-                if( y1 >= 0 && y1 < height && x1 >= 0 && x1 < width )
-                {
-                    int j = y1 * width + x1;
-                    
-                    float overlappingArea = CellOverlappingArea( outCellBuffer[i].pos, inCellBuffer[j].pos, scaledCellSize, cellSize);                    
-                    float overlappingAreaRatio = overlappingArea / cellArea;
-                    
-                    mass += inCellBuffer[j].mass * overlappingAreaRatio;
-                    vel += inCellBuffer[j].vel * inCellBuffer[j].mass * overlappingAreaRatio;
-                    color += inCellBuffer[j].color * inCellBuffer[j].mass * overlappingAreaRatio;
-                    force += inCellBuffer[j].force * overlappingAreaRatio;
-                }
-            }
+            renderTexture[xy] = lerp( half4(0,0,0,1), half4(0,0,1,1), inOutMassSATBuffer[i] / Mass0 );   
+        } 
+        else if( inOutMassSATBuffer[i] < Mass1 )
+        {
+            renderTexture[xy] = lerp( half4(0,0,1,1), half4(0,1,0,1), (inOutMassSATBuffer[i]-Mass0) / (Mass1-Mass0) );
         }
-        
-        outCellBuffer[i].mass = mass;
-        outCellBuffer[i].force = force;
-        if (mass > 0 )
+        else if( inOutMassSATBuffer[i] < Mass2 )
         {
-            outCellBuffer[i].vel = vel / mass;
-            outCellBuffer[i].color = color / mass;              
+            renderTexture[xy] = lerp( half4(0,1,0,1), half4(1,1,0,1), (inOutMassSATBuffer[i]-Mass1) / (Mass2-Mass1) );
+        }
+        else if( inOutMassSATBuffer[i] < Mass3 )
+        {
+            renderTexture[xy] = lerp( half4(1,1,0,1), half4(1,0,0,1), (inOutMassSATBuffer[i]-Mass2) / (Mass3-Mass2) );
         }
         else
         {
-            outCellBuffer[i].vel = float2(0,0);
-            outCellBuffer[i].color = float4(0,0,0,0);
+            renderTexture[xy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (inOutMassSATBuffer[i]-Mass3) / (Mass4-Mass3) );
         }
     }
 }
