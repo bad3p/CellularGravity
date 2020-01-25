@@ -14,7 +14,9 @@ public partial class CellularGravity : MonoBehaviour
     private int _integrateVelocity;
     private int _momentumTransfer;
     private int _localExpansion;
-    private int _computeMassSAT;
+    private int _initMassSAT;
+    private int _computeMassSATVP;
+    private int _computeMassSATHP;
     private int _scaleCells;
 
     private void FindKernels(ComputeShader computeShader)
@@ -25,7 +27,9 @@ public partial class CellularGravity : MonoBehaviour
         _integrateVelocity = computeShader.FindKernel( "IntegrateVelocity" );
         _momentumTransfer = computeShader.FindKernel( "MomentumTransfer" );
         _localExpansion = computeShader.FindKernel( "LocalExpansion" );
-        _computeMassSAT = computeShader.FindKernel( "ComputeMassSAT" );
+        _initMassSAT = computeShader.FindKernel( "InitMassSAT" );
+        _computeMassSATVP = computeShader.FindKernel( "ComputeMassSATVP" );
+        _computeMassSATHP = computeShader.FindKernel( "ComputeMassSATHP" );
         _scaleCells = computeShader.FindKernel( "ScaleCells" );      
     }
 
@@ -187,6 +191,29 @@ public partial class CellularGravity : MonoBehaviour
         }
     }
     
+    #region Performance
+#if UNITY_EDITOR
+    [System.Runtime.InteropServices.DllImportAttribute("Kernel32.dll")]
+    private static extern bool QueryPerformanceCounter(out long lpPerformanceCount);
+	
+    [System.Runtime.InteropServices.DllImportAttribute("Kernel32.dll")]
+    private static extern bool QueryPerformanceFrequency(out long lpFrequency);
+#endif
+	
+    public static float GetPerformanceTime()
+    {
+#if UNITY_EDITOR
+        long counter;
+        QueryPerformanceCounter( out counter );
+        long frequency;
+        QueryPerformanceFrequency( out frequency );
+        return ( float )( (double)counter / (double)frequency );
+#else
+		return 0;
+#endif
+    }
+    #endregion
+    
     private void TestSummedAreaTables()
     {
         Cell[] cells = new Cell[_width * _height];
@@ -203,30 +230,67 @@ public partial class CellularGravity : MonoBehaviour
             cells[i].color = Color.white;
         }
         
-        float[] cpuMassSAT = new float[_width * _height];        
+        float[] cpuMassSAT = new float[_width * _height];
+        float[] gpuMassSAT = new float[_width * _height];
 
+        float cpuT0 = GetPerformanceTime();
         for (int i = 0; i < _height; i++)
         {
             Vector3Int id = new Vector3Int( i,i,i );
             ComputeSummedAreaTableCPU(id, cells, cpuMassSAT, _width, _height);
         }
+        float cpuT1 = GetPerformanceTime();
         
         ComputeBuffer cellBuffer = new ComputeBuffer( cells.Length, Cell.SizeOf );
-        ComputeBuffer massSATBuffer = new ComputeBuffer( cpuMassSAT.Length, sizeof(float) );
+        ComputeBuffer inMassSATBuffer = new ComputeBuffer( cpuMassSAT.Length, sizeof(float) );
+        ComputeBuffer outMassSATBuffer = new ComputeBuffer( cpuMassSAT.Length, sizeof(float) );
         
         cellBuffer.SetData(cells);
         
+        float gpuT0 = GetPerformanceTime();
+        int initMassSATGroupCount = Mathf.CeilToInt( (float)(_cells.Length) / GPUGroupSize );
         _computeShader.SetInt("width", _width);
         _computeShader.SetInt("height", _height);        
-        _computeShader.SetBuffer(_computeMassSAT, "inCellBuffer", cellBuffer);
-        _computeShader.SetBuffer(_computeMassSAT, "outMassSAT", massSATBuffer);
-        _computeShader.Dispatch(_computeMassSAT, 1, 1, 1);
+        _computeShader.SetBuffer(_initMassSAT, "inCellBuffer", cellBuffer);
+        _computeShader.SetBuffer(_initMassSAT, "outMassSAT", outMassSATBuffer);
+        _computeShader.Dispatch(_initMassSAT, initMassSATGroupCount, 1, 1);
+        Swap(ref outMassSATBuffer, ref inMassSATBuffer);
         
-        float[] gpuMassSAT = new float[_width * _height];
-        massSATBuffer.GetData(gpuMassSAT);
+        int passCount = Mathf.RoundToInt(Mathf.Log(_width, 3) );
+        int passGroupCount = Mathf.CeilToInt( (float)(_cells.Length) / GPUGroupSize );  
+        for (int pass = 0; pass < passCount; pass++)
+        {
+            _computeShader.SetInt("width", _width);
+            _computeShader.SetInt("height", _height);
+            _computeShader.SetInt("passOffset", Mathf.RoundToInt(Mathf.Pow(3,pass) ) );
+            _computeShader.SetBuffer(_computeMassSATVP, "inMassSAT", inMassSATBuffer);
+            _computeShader.SetBuffer(_computeMassSATVP, "outMassSAT", outMassSATBuffer);
+            _computeShader.Dispatch(_computeMassSATVP, passGroupCount, 1, 1);
+            Swap(ref outMassSATBuffer, ref inMassSATBuffer);
+        }
+
+        passCount = Mathf.RoundToInt(Mathf.Log(_height, 3) );
+        passGroupCount = Mathf.CeilToInt( (float)(_cells.Length) / GPUGroupSize );  
+        for (int pass = 0; pass < passCount; pass++)
+        {
+            _computeShader.SetInt("width", _width);
+            _computeShader.SetInt("height", _height);
+            _computeShader.SetInt("passOffset", Mathf.RoundToInt(Mathf.Pow(3,pass) ) );
+            _computeShader.SetBuffer(_computeMassSATHP, "inMassSAT", inMassSATBuffer);
+            _computeShader.SetBuffer(_computeMassSATHP, "outMassSAT", outMassSATBuffer);
+            _computeShader.Dispatch(_computeMassSATHP, passGroupCount, 1, 1);
+            Swap(ref outMassSATBuffer, ref inMassSATBuffer);
+        }
+
+        inMassSATBuffer.GetData(gpuMassSAT);
+        float gpuT1 = GetPerformanceTime();
+        
+        Debug.Log( "CPU-SAT: " + (cpuT1-cpuT0).ToString("F8") );
+        Debug.Log( "GPU-SAT: " + (gpuT1-gpuT0).ToString("F8") );
         
         cellBuffer.Release();			
-        massSATBuffer.Release();
+        inMassSATBuffer.Release();
+        outMassSATBuffer.Release();
 
         const float Epsilon = 10.0f;
         for (int i = 0; i < cpuMassSAT.Length; i++)
@@ -239,23 +303,30 @@ public partial class CellularGravity : MonoBehaviour
             }
         }
         
-        PrintSAT("cpuMassSAT.txt", cpuMassSAT);
-        PrintSAT("gpuMassSAT.txt", gpuMassSAT);
+        //PrintSAT("cpuMassSAT.txt", cpuMassSAT);
+        //PrintSAT("gpuMassSAT.txt", gpuMassSAT);
     }
 
     void PrintSAT(string path, float[] sat)
     {
-        string s = "";
-        for( int i=0; i<sat.Length; i++)
+        using (StreamWriter outputFile = new StreamWriter(path))
         {
-            s += sat[i].ToString("F2");
-            s += " ";
-            if (i>0 && i % _width == 0)
+            int j = 0;
+            for( int i=0; i<sat.Length; i++)
             {
-                s += "\n";
+                outputFile.Write(sat[i].ToString("F2"));
+                outputFile.Write(" ");
+                if (j == _width -1)
+                {
+                    j = 0;
+                    outputFile.Write("\n");
+                }
+                else
+                {
+                    j++;
+                }
             }
         }
-        File.WriteAllText( path, s );
     }
 
     void ComputeSummedAreaTableCPU(Vector3Int id, Cell[] inCellBuffer, float[] outMassSAT, int width, int height)

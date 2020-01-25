@@ -48,6 +48,7 @@ int numGrids;
 int gridIndex;
 int width;
 int height;
+int passOffset;
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -605,45 +606,78 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel ComputeMassSAT
+#pragma kernel InitMassSAT
 
-[numthreads(1,1,1)]
-void ComputeMassSAT(uint3 id : SV_DispatchThreadID)
+[numthreads(GROUPSIZE,1,1)]
+void InitMassSAT(uint3 id : SV_DispatchThreadID)
 {
-    //int y = id.x;
-    if( id.x == 0 )
-    {    
-    for( int y=0; y<height; y++)
-    {
+    int i = int(id.x);
     
-    if (y == 0)
+    int length = width * height; 
+        
+    if( i < length )
     {
-        outMassSAT[0] = inCellBuffer[0].mass;
+        outMassSAT[i] = inCellBuffer[i].mass;
+    }    
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ComputeMassSATVP
+
+[numthreads(GROUPSIZE,1,1)]
+void ComputeMassSATVP(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+    
+    if (i < width*height)
+    {        
+        int y = i / width;
+        int x = i - y * width;
+        
+        outMassSAT[i] = inMassSAT[i];            
             
-        for (int x = 1; x < width; x++)
+        int x1 = x - passOffset;
+        if( x1 >= 0 )
         {
-            int i = x;
-            outMassSAT[i] = outMassSAT[i - 1] + inCellBuffer[i].mass;
+            outMassSAT[i] += inMassSAT[y * width + x1];
+        }
+            
+        int x2 = x - 2 * passOffset;
+        if( x2 >= 0 )
+        {
+            outMassSAT[i] += inMassSAT[y * width + x2];
         }
     }
-    else if (y < height)
-    {
-        int i = y * width;
-        int it = (y-1) * width;
-            
-        outMassSAT[i] = inCellBuffer[i].mass + outMassSAT[it];
-            
-        for (int x = 1; x < width; x++)
-        {
-            int j = i + x;
-            int jl = i + x - 1;
-            int jt = it + x;
-            int jtl = it + x - 1;
-            outMassSAT[j] = inCellBuffer[j].mass + outMassSAT[jt] + outMassSAT[jl] - outMassSAT[jtl];
-        }
-    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ComputeMassSATHP
+
+[numthreads(GROUPSIZE,1,1)]
+void ComputeMassSATHP(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
     
-    }
+    if (i < width*height)
+    {
+        int y = i / width;
+        int x = i - y * width;
+        
+        outMassSAT[i] = inMassSAT[i];
+                    
+        int y1 = y - passOffset;
+        if( y1 >= 0 )
+        {
+            outMassSAT[i] += inMassSAT[y1 * width + x];
+        }
+            
+        int y2 = y - 2 * passOffset;
+        if( y2 >= 0 )
+        {
+            outMassSAT[i] += inMassSAT[y2 * width + x];
+        }
     }
 }
 
