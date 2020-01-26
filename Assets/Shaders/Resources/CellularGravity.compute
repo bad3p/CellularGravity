@@ -132,6 +132,39 @@ float MassContrubution(float2 virtualCellPos, int nodeIndex, float nodeSize, flo
     }
 }
 
+float Angle(float2 from, float2 to)
+{
+    float fromSqrMag = from.x*from.x + from.y*from.y;
+    float toSqrMag = to.x*to.x + to.y*to.y;
+
+    float num = sqrt( fromSqrMag * toSqrMag);
+    if ( num < 5.96E-08 )
+    {
+        return 0.0f;
+    }
+    return acos( clamp( dot(from, to) / num, -1.0, 1.0) ) * 57.29578;
+}
+
+float Angle360(float2 from, float2 to)
+{
+    float signedAngle = Angle(from, to) * sign( from.x * to.y - from.y * to.x);
+    if( signedAngle < 0 )
+    {
+        return 360 + signedAngle;
+    }
+    else
+    {
+        return signedAngle;
+    }
+}
+
+float3 HSV2RGB(float3 c)
+{
+    float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
 //////////////////////////////////////////////////////////////////////////////////////
 
 #pragma kernel AccumulateCellMasses
@@ -440,7 +473,11 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
         float m0 = inOutCellBuffer[i].mass;
 
         float2 force = float2( 0, 0 );
-                
+        
+        //float2 attractorPos = float2( width0/2 * cellSize + cellSize / 2, height0/2 * cellSize + cellSize / 2 );
+        //float2 attractorMass = 500;
+        //force += GravityForce( p0, m0, attractorPos, attractorMass );
+                        
         for (int dy0 = -1; dy0 <= 1; dy0++)
         {
             for (int dx0 = -1; dx0 <= 1; dx0++)
@@ -665,7 +702,7 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
                             float overlappingAreaRatio = overlappingArea / expandedCellArea;
                             float dm = inCellBuffer[j].mass * overlappingAreaRatio;
                             outCellBuffer[i].mass += dm;
-                            float2 expVel = outCellBuffer[j].vel + normalize( inCellBuffer[i].pos - inCellBuffer[j].pos ) * expansionVel;
+                            float2 expVel = outCellBuffer[j].vel;// + normalize( inCellBuffer[i].pos - inCellBuffer[j].pos ) * expansionVel;
                             outCellBuffer[i].vel += expVel * dm;     
                         }
                     }
@@ -868,18 +905,23 @@ void DrawMomentums(uint3 id : SV_DispatchThreadID)
         float mag = length(vel);
         vel = normalize(vel);
                
-        vel = ( vel + 1.0 ) * 0.5;
-        vel *= saturate( mag / VelocityScale );
-        vel *= sign( inOutCellBuffer[i].mass );
+        //vel = ( vel + 1.0 ) * 0.5;
+        //vel *= saturate( mag / VelocityScale );
+        //vel *= sign( inOutCellBuffer[i].mass );
+        
+        float hue = Angle360( vel, float2(1,0) ) / 360;
+        float value = saturate( mag / VelocityScale );
         
         const float Mass0 = 0.0f;
         const float Mul0 = 0.0f;
         const float Mass1 = 0.1f;
         const float Mul1 = 1.0f;
         float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
-        vel *= lerp( Mul0, Mul1, factor );      
+        //vel *= lerp( Mul0, Mul1, factor );
+        value *= factor;      
        
-        renderTexture[xy] = half4( vel, 0, 1 );           
+        //renderTexture[xy] = half4( vel, 0, 1 );
+        renderTexture[xy] = half4( HSV2RGB( float3(hue,1,value) ), 1 );           
     }
 }
 
@@ -899,24 +941,29 @@ void DrawForces(uint3 id : SV_DispatchThreadID)
         
         int2 xy = int2( x,y );
         
-        const float ForceScale = 0.1;
+        const float ForceScale = 0.01;
        
         float2 force = inOutCellBuffer[i].force;
         float mag = length(force);
         force = normalize(force);
+        
+        float hue = Angle360( force, float2(1,0) ) / 360;
+        float value = saturate( mag / ForceScale );                 
                
-        force = ( force + 1.0 ) * 0.5;
-        force *= saturate( mag / ForceScale );
-        force *= sign( inOutCellBuffer[i].mass );
+        //force = ( force + 1.0 ) * 0.5;
+        //force *= saturate( mag / ForceScale );
+        //force *= sign( inOutCellBuffer[i].mass );
         
         const float Mass0 = 0.0f;
         const float Mul0 = 0.0f;
-        const float Mass1 = 0.1f;
+        const float Mass1 = 0.05f;
         const float Mul1 = 1.0f;
         float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
-        force *= lerp( Mul0, Mul1, factor );
+        //force *= lerp( Mul0, Mul1, factor );
+        value *= factor;
        
-        renderTexture[xy] = half4( force, 0, 1 );           
+        //renderTexture[xy] = half4( force, 0, 1 );           
+        renderTexture[xy] = half4( HSV2RGB( float3(hue,1,value) ), 1 );
     }
 }
 
