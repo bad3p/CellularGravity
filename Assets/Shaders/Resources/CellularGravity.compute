@@ -12,6 +12,12 @@ struct Cell
 	float2 force;
 };
 
+struct RowStats
+{
+    float maxMass;
+    float maxVel;
+};
+
 struct Node
 {
 	float  mass;
@@ -35,6 +41,7 @@ RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
 RWStructuredBuffer<Node> nodeBuffer;
 RWStructuredBuffer<Grid> gridBuffer;
+RWStructuredBuffer<RowStats> outRowStatsBuffer;
 RWStructuredBuffer<float> inMassSATBuffer;
 RWStructuredBuffer<float> outMassSATBuffer;
 RWStructuredBuffer<float> inOutMassSATBuffer;
@@ -790,6 +797,34 @@ void ComputeMassSAT(uint3 id : SV_DispatchThreadID)
             accumulatedMass += inMassSATBuffer[index];
             outMassSATBuffer[index] = accumulatedMass;
         }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ComputeRowStats
+
+[numthreads(GROUPSIZE,1,1)]
+void ComputeRowStats(uint3 id : SV_DispatchThreadID)
+{
+    int y = int(id.x);
+    
+    if (y < height)
+    {
+        RowStats rowStats; 
+    
+        int index = y*width;
+        rowStats.maxMass = inCellBuffer[index].mass;
+        rowStats.maxVel = length( inCellBuffer[index].vel );       
+        index++;
+
+        for( int x=1; x<width; x++, index++)
+        {
+            rowStats.maxMass = max( rowStats.maxMass, inCellBuffer[index].mass );
+            rowStats.maxVel = max( rowStats.maxVel, length( inCellBuffer[index].vel ) );
+        }
+        
+        outRowStatsBuffer[y] = rowStats;        
     }
 }
 

@@ -51,6 +51,14 @@ public partial class CellularGravity : MonoBehaviour
 		public const int SizeOf = 44; // ComputeShader stride
 	};
 	
+	public struct RowStats
+	{
+		public float maxMass; // sizeof(float) = 4
+		public float maxVel;  // sizeof(float) = 4
+		
+		public const int SizeOf = 8; // ComputeShader stride
+	};
+	
 	public struct Node
 	{
 		public float   mass;    // sizeof(float) = 4
@@ -81,12 +89,14 @@ public partial class CellularGravity : MonoBehaviour
 	private Cell[] _cells = new Cell[0];
 	private Node[] _nodes = new Node[0];
 	private Grid[] _grids = new Grid[0];
+	private RowStats[] _rowStats = new RowStats[0];
 	private ComputeBuffer _inCellBuffer = null;
 	private ComputeBuffer _outCellBuffer = null;
 	private ComputeBuffer _nodeBuffer = null;
 	private ComputeBuffer _gridBuffer = null;
 	private ComputeBuffer _inMassSATBuffer = null;
 	private ComputeBuffer _outMassSATBuffer = null;
+	private ComputeBuffer _outRowStatsBuffer = null;
 	private ComputeShader _computeShader = null;
 	private RenderTexture _gridRenderTexture = null;
 	private RenderTexture[] _nodeRenderTextures = new RenderTexture[0];
@@ -183,6 +193,7 @@ public partial class CellularGravity : MonoBehaviour
 		_cells = new Cell[_width*_height];
 		_nodes = new Node[nodeBufferLength+1]; // + node for 1x1 grid
 		_grids = new Grid[gridBufferLength+2]; // + cell grid (first) + 1x1 grid (last)
+		_rowStats = new RowStats[_height];
 
 		int offset = 0;
 		for (int i = 0; i < _grids.Length; i++)
@@ -210,6 +221,7 @@ public partial class CellularGravity : MonoBehaviour
 		_gridBuffer = new ComputeBuffer( _grids.Length, Grid.SizeOf );
 		_inMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
 		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
+		_outRowStatsBuffer = new ComputeBuffer( _rowStats.Length, RowStats.SizeOf );
 		_computeShader = Resources.Load<ComputeShader>( "CellularGravity" );
 
 		FindKernels( _computeShader );
@@ -229,6 +241,7 @@ public partial class CellularGravity : MonoBehaviour
 		_gridBuffer.Release();
 		_inMassSATBuffer.Release();
 		_outMassSATBuffer.Release();
+		_outRowStatsBuffer.Release();
 	}
 
 	public void OnShowMasses(string arg)

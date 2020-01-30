@@ -20,6 +20,7 @@ public partial class CellularGravity : MonoBehaviour
     private int _initMassSAT;
     private int _transposeMassSAT;
     private int _computeMassSAT;
+    private int _computeRowStats;
 
     private void FindKernels(ComputeShader computeShader)
     {
@@ -33,6 +34,7 @@ public partial class CellularGravity : MonoBehaviour
         _initMassSAT = computeShader.FindKernel("InitMassSAT");
         _transposeMassSAT = computeShader.FindKernel("TransposeMassSAT");
         _computeMassSAT = computeShader.FindKernel("ComputeMassSAT");
+        _computeRowStats = computeShader.FindKernel("ComputeRowStats");
     }
 
     private static void Swap(ref ComputeBuffer cbRef0, ref ComputeBuffer cbRef1)
@@ -145,21 +147,28 @@ public partial class CellularGravity : MonoBehaviour
         ComputeMassSAT();
 
         int numberOfCellGroups = Mathf.CeilToInt((float) (_cells.Length) / GPUGroupSize);
-
-        _nodeBuffer.GetData(_nodes);
-        //_inCellBuffer.GetData(_cells);
-
-        float maxMass = _nodes[_nodes.Length - 1].maxMass;
-        float maxVel = _nodes[_nodes.Length - 1].maxVel;
-        Vector2 inf = _nodes[_nodes.Length - 1].inf;
-        Vector2 sup = _nodes[_nodes.Length - 1].sup;
+        int numberOfRowStatsGroups = Mathf.CeilToInt((float) (_rowStats.Length) / GPUGroupSize);
         
         _computeShader.SetInt("numGrids", _grids.Length);
         _computeShader.SetFloat("gravity", Gravity);
         _computeShader.SetFloat("cellSize", CellSize);
         _computeShader.SetFloat("density", Density);
-        _computeShader.SetFloat("width", _width);
-        _computeShader.SetFloat("height", _height);
+        _computeShader.SetInt("width", _width);
+        _computeShader.SetInt("height", _height);
+        
+        _computeShader.SetBuffer(_computeRowStats, "inCellBuffer", _inCellBuffer);
+        _computeShader.SetBuffer(_computeRowStats, "outRowStatsBuffer", _outRowStatsBuffer);
+        _computeShader.Dispatch(_computeRowStats, numberOfRowStatsGroups, 1, 1);
+
+        _outRowStatsBuffer.GetData(_rowStats);
+
+        float maxMass = 0.0f;
+        float maxVel = 0.0f;
+        for (int i = 0; i < _rowStats.Length; i++)
+        {
+            maxMass = Mathf.Max(maxMass, _rowStats[i].maxMass);
+            maxVel = Mathf.Max(maxVel, _rowStats[i].maxVel);
+        }
 
         if (UseSAT)
         {
