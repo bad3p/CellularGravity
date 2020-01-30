@@ -10,9 +10,6 @@ public partial class CellularGravity : MonoBehaviour
 {
     const int GPUGroupSize = 128;
 
-    private int _accumulateCellMasses;
-    private int _accumulateNodeMasses;
-    private int _computeGravityForceWithNodes;
     private int _computeGravityForceWithSAT;
     private int _integrateVelocity;
     private int _momentumTransfer;
@@ -24,9 +21,6 @@ public partial class CellularGravity : MonoBehaviour
 
     private void FindKernels(ComputeShader computeShader)
     {
-        _accumulateCellMasses = computeShader.FindKernel("AccumulateCellMasses");
-        _accumulateNodeMasses = computeShader.FindKernel("AccumulateNodeMasses");
-        _computeGravityForceWithNodes = computeShader.FindKernel("ComputeGravityForceWithNodes");
         _computeGravityForceWithSAT = computeShader.FindKernel("ComputeGravityForceWithSAT");
         _integrateVelocity = computeShader.FindKernel("IntegrateVelocity");
         _momentumTransfer = computeShader.FindKernel("MomentumTransfer");
@@ -86,27 +80,6 @@ public partial class CellularGravity : MonoBehaviour
         _gridBuffer.SetData(_grids);
     }
 
-    private void AccumulateMasses()
-    {
-        int numberOfNodeGroups = Mathf.CeilToInt((float) (_grids[1].length) / GPUGroupSize);
-
-        _computeShader.SetBuffer(_accumulateCellMasses, "inOutCellBuffer", _inCellBuffer);
-        _computeShader.SetBuffer(_accumulateCellMasses, "nodeBuffer", _nodeBuffer);
-        _computeShader.SetBuffer(_accumulateCellMasses, "gridBuffer", _gridBuffer);
-        _computeShader.Dispatch(_accumulateCellMasses, numberOfNodeGroups, 1, 1);
-
-        for (int i = 2; i < _grids.Length; i++) // [0] is cell grid, [1] is largest node grid
-        {
-            numberOfNodeGroups = Mathf.CeilToInt((float) (_grids[i].length) / GPUGroupSize);
-
-            _computeShader.SetInt("gridIndex", i);
-            _computeShader.SetBuffer(_accumulateNodeMasses, "inOutCellBuffer", _inCellBuffer);
-            _computeShader.SetBuffer(_accumulateNodeMasses, "nodeBuffer", _nodeBuffer);
-            _computeShader.SetBuffer(_accumulateNodeMasses, "gridBuffer", _gridBuffer);
-            _computeShader.Dispatch(_accumulateNodeMasses, numberOfNodeGroups, 1, 1);
-        }
-    }
-
     private void ComputeMassSAT()
     {
         int numberOfInitMassSATGroups = Mathf.CeilToInt((float) (_cells.Length) / GPUGroupSize);
@@ -143,7 +116,6 @@ public partial class CellularGravity : MonoBehaviour
 
     private void SimulateGPU()
     {
-        AccumulateMasses();
         ComputeMassSAT();
 
         int numberOfCellGroups = Mathf.CeilToInt((float) (_cells.Length) / GPUGroupSize);
@@ -170,21 +142,11 @@ public partial class CellularGravity : MonoBehaviour
             maxVel = Mathf.Max(maxVel, _rowStats[i].maxVel);
         }
 
-        if (UseSAT)
-        {
-            _computeShader.SetBuffer(_computeGravityForceWithSAT, "inOutCellBuffer", _inCellBuffer);
-            _computeShader.SetBuffer(_computeGravityForceWithSAT, "inOutMassSATBuffer", _inMassSATBuffer);
-            _computeShader.SetBuffer(_computeGravityForceWithSAT, "nodeBuffer", _nodeBuffer);
-            _computeShader.SetBuffer(_computeGravityForceWithSAT, "gridBuffer", _gridBuffer);
-            _computeShader.Dispatch(_computeGravityForceWithSAT, numberOfCellGroups, 1, 1);
-        }
-        else
-        {
-            _computeShader.SetBuffer(_computeGravityForceWithNodes, "inOutCellBuffer", _inCellBuffer);
-            _computeShader.SetBuffer(_computeGravityForceWithNodes, "nodeBuffer", _nodeBuffer);
-            _computeShader.SetBuffer(_computeGravityForceWithNodes, "gridBuffer", _gridBuffer);
-            _computeShader.Dispatch(_computeGravityForceWithNodes, numberOfCellGroups, 1, 1);
-        }
+        _computeShader.SetBuffer(_computeGravityForceWithSAT, "inOutCellBuffer", _inCellBuffer);
+        _computeShader.SetBuffer(_computeGravityForceWithSAT, "inOutMassSATBuffer", _inMassSATBuffer);
+        _computeShader.SetBuffer(_computeGravityForceWithSAT, "nodeBuffer", _nodeBuffer);
+        _computeShader.SetBuffer(_computeGravityForceWithSAT, "gridBuffer", _gridBuffer);
+        _computeShader.Dispatch(_computeGravityForceWithSAT, numberOfCellGroups, 1, 1);
 
         float maxExpansionVel = maxMass * Density / (CellSize * CellSize);
         float deltaTime = (maxVel > 0) ? (CellSize / maxVel * MaxCellOffset) : Time.fixedDeltaTime;

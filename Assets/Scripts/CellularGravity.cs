@@ -271,7 +271,6 @@ public partial class CellularGravity : MonoBehaviour
 		int drawMasses = _computeShader.FindKernel( "DrawMasses" );
 		int drawMomentums = _computeShader.FindKernel( "DrawMomentums" );
 		int drawForces = _computeShader.FindKernel( "DrawForces" );
-		int drawNodes = _computeShader.FindKernel( "DrawNodes" );
 		int drawMassSAT = _computeShader.FindKernel( "DrawMassSAT" );
 		
 		int numberOfGroups = Mathf.CeilToInt( (float)(_width*_height) / GPUGroupSize );
@@ -304,20 +303,6 @@ public partial class CellularGravity : MonoBehaviour
 				break;
 			default:
 				break;
-		}
-
-		for (int i = 0; i < _nodeRenderTextures.Length; i++)
-		{
-			if (_nodeRenderTextures[i])
-			{
-				_computeShader.SetInt("gridIndex", i + 1);
-				_computeShader.SetFloat("cellSize", CellSize);
-				_computeShader.SetBuffer(drawNodes, "inOutCellBuffer", _inCellBuffer);
-				_computeShader.SetBuffer(drawNodes, "nodeBuffer", _nodeBuffer);
-				_computeShader.SetBuffer(drawNodes, "gridBuffer", _gridBuffer);
-				_computeShader.SetTexture(drawNodes, "renderTexture", _nodeRenderTextures[i]);
-				_computeShader.Dispatch(drawNodes, numberOfGroups, 1, 1);
-			}
 		}
 	}
 }
