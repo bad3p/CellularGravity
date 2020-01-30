@@ -38,10 +38,9 @@ public partial class CellularGravity : MonoBehaviour
         cbRef1 = temp;
     }
 
-    private void Initialize(Texture2D massTexture, Texture2D colorTexture)
+    private void Initialize(Texture2D massTexture)
     {
         var massPixels = massTexture.GetPixels();
-        var colorPixels = colorTexture.GetPixels();
 
         int numCells = _cells.Length;
         for (int i = 0; i < numCells; i++)
@@ -52,32 +51,10 @@ public partial class CellularGravity : MonoBehaviour
             _cells[i].vel = Vector2.zero;
             _cells[i].pos = new Vector2(x * CellSize + CellSize / 2, y * CellSize + CellSize / 2);
             _cells[i].mass = InitialMassMultiplier * massPixels[i].r;
-            _cells[i].color = colorPixels[i];
-        }
-
-        for (int k = 1; k < _grids.Length; k++)
-        {
-            int widthK = _grids[k].width;
-            int startK = _grids[k].start;
-            int lengthK = _grids[k].length;
-            float cellSizeK = CellSize * _width / widthK;
-
-            for (int i = 0; i < lengthK; i++)
-            {
-                int y = i / widthK;
-                int x = i - y * widthK;
-
-                _nodes[i + startK].pos = new Vector2(x * cellSizeK + cellSizeK / 2, y * cellSizeK + cellSizeK / 2);
-                _nodes[i + startK].mass = 0.0f;
-                _nodes[i + startK].maxMass = 0.0f;
-                _nodes[i + startK].maxVel = 0.0f;
-            }
         }
 
         _inCellBuffer.SetData(_cells);
         _outCellBuffer.SetData(_cells);
-        _nodeBuffer.SetData(_nodes);
-        _gridBuffer.SetData(_grids);
     }
 
     private void ComputeMassSAT()
@@ -121,7 +98,6 @@ public partial class CellularGravity : MonoBehaviour
         int numberOfCellGroups = Mathf.CeilToInt((float) (_cells.Length) / GPUGroupSize);
         int numberOfRowStatsGroups = Mathf.CeilToInt((float) (_rowStats.Length) / GPUGroupSize);
         
-        _computeShader.SetInt("numGrids", _grids.Length);
         _computeShader.SetFloat("gravity", Gravity);
         _computeShader.SetFloat("cellSize", CellSize);
         _computeShader.SetFloat("density", Density);
@@ -144,8 +120,6 @@ public partial class CellularGravity : MonoBehaviour
 
         _computeShader.SetBuffer(_computeGravityForceWithSAT, "inOutCellBuffer", _inCellBuffer);
         _computeShader.SetBuffer(_computeGravityForceWithSAT, "inOutMassSATBuffer", _inMassSATBuffer);
-        _computeShader.SetBuffer(_computeGravityForceWithSAT, "nodeBuffer", _nodeBuffer);
-        _computeShader.SetBuffer(_computeGravityForceWithSAT, "gridBuffer", _gridBuffer);
         _computeShader.Dispatch(_computeGravityForceWithSAT, numberOfCellGroups, 1, 1);
 
         float maxExpansionVel = maxMass * Density / (CellSize * CellSize);
@@ -156,19 +130,16 @@ public partial class CellularGravity : MonoBehaviour
 
         _computeShader.SetFloat("deltaTime", deltaTime);
         _computeShader.SetBuffer(_integrateVelocity, "inOutCellBuffer", _inCellBuffer);
-        _computeShader.SetBuffer(_integrateVelocity, "gridBuffer", _gridBuffer);
         _computeShader.Dispatch(_integrateVelocity, numberOfCellGroups, 1, 1);
 
         _computeShader.SetBuffer(_momentumTransfer, "inCellBuffer", _inCellBuffer);
         _computeShader.SetBuffer(_momentumTransfer, "outCellBuffer", _outCellBuffer);
-        _computeShader.SetBuffer(_momentumTransfer, "gridBuffer", _gridBuffer);
         _computeShader.Dispatch(_momentumTransfer, numberOfCellGroups, 1, 1);
 
         Swap(ref _inCellBuffer, ref _outCellBuffer);
 
         _computeShader.SetBuffer(_localExpansion, "inCellBuffer", _inCellBuffer);
         _computeShader.SetBuffer(_localExpansion, "outCellBuffer", _outCellBuffer);
-        _computeShader.SetBuffer(_localExpansion, "gridBuffer", _gridBuffer);
         _computeShader.Dispatch(_localExpansion, numberOfCellGroups, 1, 1);
 
         Swap(ref _inCellBuffer, ref _outCellBuffer);

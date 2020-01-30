@@ -6,7 +6,6 @@
 struct Cell
 {
     float  mass;
-	float4 color;
 	float2 vel;
 	float2 pos;		
 	float2 force;
@@ -282,8 +281,7 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
             outCellBuffer[i].mass = 0;
         }
                     
-        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;
-        outCellBuffer[i].color = saturate( inCellBuffer[i].color - inCellBuffer[i].color * offsetAreaRatio );       
+        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;      
 
         for (int dy0 = -1; dy0 <= 1; dy0++)
         {
@@ -306,7 +304,6 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
                             float dm = inCellBuffer[j].mass * overlappingAreaRatio;                            
                             outCellBuffer[i].mass += dm;
                             outCellBuffer[i].vel += inCellBuffer[j].vel * dm;                                
-                            outCellBuffer[i].color = saturate( outCellBuffer[i].color + outCellBuffer[j].color * overlappingAreaRatio );
                         }                        
                     }
                 }
@@ -326,7 +323,6 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
     {
         outCellBuffer[i].force = inCellBuffer[i].force;
         outCellBuffer[i].mass = inCellBuffer[i].mass;
-        outCellBuffer[i].color = inCellBuffer[i].color;
         outCellBuffer[i].vel = inCellBuffer[i].vel;
 	    outCellBuffer[i].pos = inCellBuffer[i].pos;
     }
@@ -397,15 +393,13 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
             outCellBuffer[i].vel = float2( 0, 0 );
         }
         outCellBuffer[i].vel = inCellBuffer[i].vel;                  
-        outCellBuffer[i].force = inCellBuffer[i].force;        
-        outCellBuffer[i].color = inCellBuffer[i].color;        
+        outCellBuffer[i].force = inCellBuffer[i].force;               
 	    outCellBuffer[i].pos = inCellBuffer[i].pos;                      
     }
     else
     {
         outCellBuffer[i].force = inCellBuffer[i].force;
         outCellBuffer[i].mass = inCellBuffer[i].mass;
-        outCellBuffer[i].color = inCellBuffer[i].color;
         outCellBuffer[i].vel = inCellBuffer[i].vel;
 	    outCellBuffer[i].pos = inCellBuffer[i].pos;
     }
