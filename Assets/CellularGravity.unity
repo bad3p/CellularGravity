@@ -686,23 +686,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   DeltaTime: {fileID: 2098226924}
-  NodeImages:
-  - {fileID: 386808340}
-  - {fileID: 932466277}
-  - {fileID: 699495666}
-  - {fileID: 2122908551}
-  - {fileID: 1170501496}
-  - {fileID: 1779793720}
-  Resolution: 2
+  Resolution: 3
   InitialMassMultiplier: 5
   CellSize: 50
   Gravity: 9.8
   Density: 5
   MaxCellOffset: 0.125
   MaxDeltaTime: 0.125
-  DisplayMode: 0
+  DisplayMode: 2
   UseSAT: 1
-  ColorTexture: {fileID: 2800000, guid: d3833f02369c2ef4e8fafd791a7a9edb, type: 3}
   MassTexture: {fileID: 2800000, guid: ed47f44dad0d55f4baf6f20b3733e2e5, type: 3}
   MassGradient:
     serializedVersion: 2
