@@ -6,8 +6,7 @@
 struct Cell
 {
     float  mass;
-	float2 vel;
-	float2 pos;		
+	float2 vel;		
 	float2 force;
 };
 
@@ -154,7 +153,7 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
         int y0 = i / width0;
         int x0 = i - y0 * width0;
 
-        float2 p0 = inOutCellBuffer[i].pos;
+        float2 p0 = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );
         float m0 = inOutCellBuffer[i].mass;
 
         float2 force = float2( 0, 0 );
@@ -172,7 +171,7 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                     {
                         int j = y1 * width0 + x1;
                         
-                        float2 p1 = inOutCellBuffer[j].pos;
+                        float2 p1 = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );
                         float m1 = inOutCellBuffer[j].mass;
                         force += GravityForce( p0, m0, p1, m1 );
                     }                        
@@ -206,10 +205,15 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                             int irb = yBottom * width0 + xRight;
                             int ilb = yBottom * width0 + xLeft;
                             
-                            float2 virtualCellPos = ( inOutCellBuffer[ilt].pos +
-                                                      inOutCellBuffer[irt].pos +
-                                                      inOutCellBuffer[irb].pos +
-                                                      inOutCellBuffer[ilb].pos ) / 4;
+                            float lx = xLeft * cellSize + cellSize / 2;
+                            float rx = xRight * cellSize + cellSize / 2;
+                            float ty = yTop * cellSize + cellSize / 2;
+                            float by = yBottom * cellSize + cellSize / 2;
+                            
+                            float2 virtualCellPos = ( float2(lx,ty) +
+                                                      float2(rx,ty) +
+                                                      float2(rx,by) +
+                                                      float2(lx,by) ) / 4;
                                                     
                             float2 virtualCellMass = inOutMassSATBuffer[irb] -
                                                      inOutMassSATBuffer[ilb] -
@@ -269,11 +273,11 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
         int y0 = i / width;
         int x0 = i - y0 * width;
  
-        outCellBuffer[i].pos = inCellBuffer[i].pos;
         outCellBuffer[i].force = inCellBuffer[i].force;
 
+        float2 iPos = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );
         float2 iOffset = inCellBuffer[i].vel * deltaTime;
-        float offsetAreaRatio = CellOffsetArea( inCellBuffer[i].pos, iOffset) / cellArea;
+        float offsetAreaRatio = CellOffsetArea( iPos, iOffset) / cellArea;
         outCellBuffer[i].mass = inCellBuffer[i].mass - inCellBuffer[i].mass * offsetAreaRatio;
         
         if (outCellBuffer[i].mass < 0)
@@ -295,9 +299,10 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
                     if (x1 >= 0 && x1 < width && y1 >= 0 && y1 < height)
                     {
                         int j = y1 * width + x1;
-                    
+
+                        float2 jPos = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );                    
                         float2 jOffset = inCellBuffer[j].vel * deltaTime;
-                        float overlappingArea = CellOverlappingArea( inCellBuffer[i].pos, inCellBuffer[j].pos + jOffset, cellSize);
+                        float overlappingArea = CellOverlappingArea( iPos, jPos + jOffset, cellSize);
                         if (overlappingArea > 0)
                         {
                             float overlappingAreaRatio = overlappingArea / cellArea;                             
@@ -324,7 +329,6 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
         outCellBuffer[i].force = inCellBuffer[i].force;
         outCellBuffer[i].mass = inCellBuffer[i].mass;
         outCellBuffer[i].vel = inCellBuffer[i].vel;
-	    outCellBuffer[i].pos = inCellBuffer[i].pos;
     }
 }
 
@@ -351,7 +355,9 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
         float expandedCellArea = expandedCellSize * expandedCellSize;
         
         outCellBuffer[i].mass = inCellBuffer[i].mass * cellArea / expandedCellArea;
-        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;  
+        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;
+        
+        float2 iPos = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );  
         
         for (int dy0 = -1; dy0 <= 1; dy0++)
         {
@@ -369,14 +375,15 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
                         expansionVel = inCellBuffer[j].mass * density / cellArea;         
                         expandedCellSize = cellSize + expansionVel * deltaTime;
                         expandedCellArea = expandedCellSize * expandedCellSize;
-                        
-                        float overlappingArea = CellOverlappingArea( inCellBuffer[i].pos, inCellBuffer[j].pos, cellSize, expandedCellSize);
+
+                        float2 jPos = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );                        
+                        float overlappingArea = CellOverlappingArea( iPos, jPos, cellSize, expandedCellSize);
                         if( overlappingArea > 0 )
                         {
                             float overlappingAreaRatio = overlappingArea / expandedCellArea;
                             float dm = inCellBuffer[j].mass * overlappingAreaRatio;
                             outCellBuffer[i].mass += dm;
-                            float2 expVel = outCellBuffer[j].vel;// + normalize( inCellBuffer[i].pos - inCellBuffer[j].pos ) * expansionVel;
+                            float2 expVel = outCellBuffer[j].vel;// + normalize( iPos - jPos ) * expansionVel;
                             outCellBuffer[i].vel += expVel * dm;     
                         }
                     }
@@ -393,15 +400,13 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
             outCellBuffer[i].vel = float2( 0, 0 );
         }
         outCellBuffer[i].vel = inCellBuffer[i].vel;                  
-        outCellBuffer[i].force = inCellBuffer[i].force;               
-	    outCellBuffer[i].pos = inCellBuffer[i].pos;                      
+        outCellBuffer[i].force = inCellBuffer[i].force;                                    
     }
     else
     {
         outCellBuffer[i].force = inCellBuffer[i].force;
         outCellBuffer[i].mass = inCellBuffer[i].mass;
         outCellBuffer[i].vel = inCellBuffer[i].vel;
-	    outCellBuffer[i].pos = inCellBuffer[i].pos;
     }
 }
 

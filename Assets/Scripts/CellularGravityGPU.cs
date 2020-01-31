@@ -49,7 +49,6 @@ public partial class CellularGravity : MonoBehaviour
             int x = i - y * _width;
 
             _cells[i].vel = Vector2.zero;
-            _cells[i].pos = new Vector2(x * CellSize + CellSize / 2, y * CellSize + CellSize / 2);
             _cells[i].mass = InitialMassMultiplier * massPixels[i].r;
         }
 

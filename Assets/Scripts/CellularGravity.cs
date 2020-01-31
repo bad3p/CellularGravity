@@ -42,10 +42,9 @@ public partial class CellularGravity : MonoBehaviour
 	{
 		public float   mass;    // sizeof(float) = 4
 		public Vector2 vel;     // 2 * sizeof(float) = 8
-		public Vector2 pos;     // 2 * sizeof(float) = 8		
 		public Vector2 force;   // 2 * sizeof(float) = 8
 
-		public const int SizeOf = 28; // ComputeShader stride
+		public const int SizeOf = 20; // ComputeShader stride
 	};
 	
 	public struct RowStats
