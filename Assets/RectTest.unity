@@ -142,12 +142,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   CellSize: 10
-  MassRectPos1: {x: 1.5, y: -2}
-  MassRectSize1: {x: 7, y: 6}
-  MassValue1: 7.08
-  MassRectPos2: {x: -3.5, y: 4}
-  MassRectSize2: {x: 3, y: 2}
-  MassValue2: 0.4
+  MaxCellOffset: 0.499
+  CellPos1: {x: 0, y: 0}
+  MassRect1: {x: -1, y: -1, z: 5, w: 5}
+  MassValue1: 1
+  Vel1: {x: 1, y: 1}
+  CellPos2: {x: 10, y: 0}
+  MassRect2: {x: -5, y: -5, z: 4, w: 2}
+  MassValue2: 1
+  Vel2: {x: -1, y: -1.34}
 --- !u!4 &2111468333
 Transform:
   m_ObjectHideFlags: 0

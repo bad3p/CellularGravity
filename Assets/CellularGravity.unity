@@ -157,7 +157,7 @@ Camera:
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 2
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_BackGroundColor: {r: 0.2264151, g: 0.2264151, b: 0.2264151, a: 0}
   m_projectionMatrixMode: 1
   m_SensorSize: {x: 36, y: 24}
   m_LensShift: {x: 0, y: 0}
@@ -687,15 +687,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   DeltaTime: {fileID: 2098226924}
   Resolution: 3
-  InitialMassMultiplier: 5
+  InitialMassMultiplier: 0.5
   CellSize: 50
   Gravity: 9.8
   Density: 5
-  MaxCellOffset: 0.125
-  MaxDeltaTime: 0.125
+  MaxCellOffset: 0.49
+  MaxDeltaTime: 1
   DisplayMode: 2
   UseSAT: 1
-  MassTexture: {fileID: 2800000, guid: ed47f44dad0d55f4baf6f20b3733e2e5, type: 3}
+  MassTexture: {fileID: 2800000, guid: f888f8a9b88ddd442bfe129c484456bb, type: 3}
   MassGradient:
     serializedVersion: 2
     key0: {r: 1, g: 1, b: 1, a: 1}
@@ -1710,8 +1710,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -236.00002, y: -407}
-  m_SizeDelta: {x: 160, y: 48}
+  m_AnchoredPosition: {x: -562.3, y: -388.9}
+  m_SizeDelta: {x: 160, y: 32}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2098226924
 MonoBehaviour:
@@ -1733,12 +1733,12 @@ MonoBehaviour:
       m_Calls: []
   m_FontData:
     m_Font: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
-    m_FontSize: 32
+    m_FontSize: 24
     m_FontStyle: 0
     m_BestFit: 0
-    m_MinSize: 3
+    m_MinSize: 2
     m_MaxSize: 40
-    m_Alignment: 4
+    m_Alignment: 3
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 0
