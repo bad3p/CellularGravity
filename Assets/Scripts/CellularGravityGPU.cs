@@ -50,6 +50,26 @@ public partial class CellularGravity : MonoBehaviour
 
             _cells[i].vel = Vector2.zero;
             _cells[i].mass = InitialMassMultiplier * massPixels[i].r;
+            
+            _cells[i].rect = new Vector4
+            (
+                x * CellSize, 
+                y * CellSize,
+                x * CellSize + CellSize, 
+                y * CellSize + CellSize
+            );
+            
+            float xInf = x * CellSize;
+            float yInf = y * CellSize;
+            float xSup = x * CellSize + CellSize;
+            float ySup = y * CellSize + CellSize;
+
+            xInf += Random.Range(0.0f, CellSize / 2);
+            yInf += Random.Range(0.0f, CellSize / 2);
+            xSup -= Random.Range(0.0f, CellSize / 2);
+            ySup -= Random.Range(0.0f, CellSize / 2); 
+            
+            _cells[i].rect = new Vector4( xInf, yInf, xSup, ySup );
         }
 
         _inCellBuffer.SetData(_cells);

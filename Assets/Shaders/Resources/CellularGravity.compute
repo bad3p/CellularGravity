@@ -6,6 +6,7 @@
 struct Cell
 {
     float  mass;
+    float4 rect;
 	float2 vel;		
 	float2 force;
 };
@@ -32,6 +33,8 @@ float deltaTime;
 float density;
 int width;
 int height;
+int rtWidth;
+int rtHeight;
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -581,12 +584,12 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
         
-    if( i < width*height )
-    {        
-        int y = i / width;
-        int x = i - y * width;        
+    if( i < rtWidth*rtHeight )
+    {
+        int rty = i / rtWidth;
+        int rtx = i - rty * rtWidth;        
         
-        int2 xy = int2( x,y );
+        int2 rtxy = int2( rtx, rty );
         
         const float Mass0 = 0.001;
         const float Mass1 = 0.01;
@@ -594,25 +597,43 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
         const float Mass3 = 1;
         const float Mass4 = 10;
         
-        if( inOutCellBuffer[i].mass < Mass0 )
-        {
-            renderTexture[xy] = lerp( half4(0,0,0,1), half4(0,0,1,1), inOutCellBuffer[i].mass / Mass0 );   
-        } 
-        else if( inOutCellBuffer[i].mass < Mass1 )
-        {
-            renderTexture[xy] = lerp( half4(0,0,1,1), half4(0,1,0,1), (inOutCellBuffer[i].mass-Mass0) / (Mass1-Mass0) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass2 )
-        {
-            renderTexture[xy] = lerp( half4(0,1,0,1), half4(1,1,0,1), (inOutCellBuffer[i].mass-Mass1) / (Mass2-Mass1) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass3 )
-        {
-            renderTexture[xy] = lerp( half4(1,1,0,1), half4(1,0,0,1), (inOutCellBuffer[i].mass-Mass2) / (Mass3-Mass2) );
+        int cy = rty / (rtHeight/height);
+        int cx = rtx / (rtWidth/width);
+        int ci = cy * width + cx;
+        
+        float4 rect = inOutCellBuffer[ci].rect;
+        
+        float rtPixelSize = cellSize / (rtHeight/height);
+        float2 rtp = float2( rtx * rtPixelSize + rtPixelSize/2, rty * rtPixelSize + rtPixelSize/2 );
+        
+        if( rtp.x >= rect.x && rtp.y >= rect.y && rtp.x <= rect.z && rtp.y <= rect.w )
+        {         
+            float mass = inOutCellBuffer[ci].mass;
+        
+            if( mass < Mass0 )
+            {
+                renderTexture[rtxy] = lerp( half4(0,0,0,1), half4(0,0,1,1), mass / Mass0 );   
+            } 
+            else if( mass < Mass1 )
+            {
+                renderTexture[rtxy] = lerp( half4(0,0,1,1), half4(0,1,0,1), (mass-Mass0) / (Mass1-Mass0) );
+            }
+            else if( mass < Mass2 )
+            {
+                renderTexture[rtxy] = lerp( half4(0,1,0,1), half4(1,1,0,1), (mass-Mass1) / (Mass2-Mass1) );
+            }
+            else if( mass < Mass3 )
+            {
+                renderTexture[rtxy] = lerp( half4(1,1,0,1), half4(1,0,0,1), (mass-Mass2) / (Mass3-Mass2) );
+            }
+            else
+            {
+                renderTexture[rtxy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
+            }
         }
         else
         {
-            renderTexture[xy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
+            renderTexture[rtxy] = half4(0,0,0,1);
         }
     }
 }

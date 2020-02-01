@@ -41,10 +41,11 @@ public partial class CellularGravity : MonoBehaviour
 	public struct Cell
 	{
 		public float   mass;    // sizeof(float) = 4
+		public Vector4 rect;    // 4 * sizeof(float) = 16 
 		public Vector2 vel;     // 2 * sizeof(float) = 8
 		public Vector2 force;   // 2 * sizeof(float) = 8
 
-		public const int SizeOf = 20; // ComputeShader stride
+		public const int SizeOf = 36; // ComputeShader stride
 	};
 	
 	public struct RowStats
@@ -68,6 +69,7 @@ public partial class CellularGravity : MonoBehaviour
 	private ComputeBuffer _outRowStatsBuffer = null;
 	private ComputeShader _computeShader = null;
 	private RenderTexture _gridRenderTexture = null;
+	private RenderTexture _largeRenderTexture = null;
 
 	private Texture2D GetReadableTexture(Texture2D src, int width, int height)
 	{
@@ -104,8 +106,13 @@ public partial class CellularGravity : MonoBehaviour
 		_gridRenderTexture.enableRandomWrite = true;
 		_gridRenderTexture.filterMode = FilterMode.Point;
 		_gridRenderTexture.Create();
-		
-		_gridMaterial.mainTexture = _gridRenderTexture;
+
+		int largeRenderTextureWidth = Mathf.Min( 2187, _width * 9 );
+		int largeRenderTextureHeight = Mathf.Min( 2187, _height * 9 );
+		_largeRenderTexture = new RenderTexture( largeRenderTextureWidth, largeRenderTextureHeight, 0, RenderTextureFormat.ARGBHalf );		
+		_largeRenderTexture.enableRandomWrite = true;
+		_largeRenderTexture.filterMode = FilterMode.Point;
+		_largeRenderTexture.Create();
 
 		int nodeBufferLength = 0;
 		int gridBufferLength = 0;
@@ -177,28 +184,36 @@ public partial class CellularGravity : MonoBehaviour
 		int drawMassSAT = _computeShader.FindKernel( "DrawMassSAT" );
 		
 		int numberOfGroups = Mathf.CeilToInt( (float)(_width*_height) / GPUGroupSize );
+		int numberOfLargeGroupd = Mathf.CeilToInt( (float)(_largeRenderTexture.width*_largeRenderTexture.height) / GPUGroupSize );
 
 		switch (DisplayMode)
 		{
 			case DisplayMode.Masses:
+				_computeShader.SetInt("rtWidth", _largeRenderTexture.width);
+				_computeShader.SetInt("rtHeight", _largeRenderTexture.height);
+				_computeShader.SetFloat("cellSize", CellSize);
 				_computeShader.SetBuffer(drawMasses, "inOutCellBuffer", _inCellBuffer);
-				_computeShader.SetTexture(drawMasses, "renderTexture", _gridRenderTexture);
-				_computeShader.Dispatch(drawMasses, numberOfGroups, 1, 1);
+				_computeShader.SetTexture(drawMasses, "renderTexture", _largeRenderTexture);
+				_computeShader.Dispatch(drawMasses, numberOfLargeGroupd, 1, 1);
+				_gridMaterial.mainTexture = _largeRenderTexture;
 				break;
 			case DisplayMode.Momentums:
 				_computeShader.SetBuffer(drawMomentums, "inOutCellBuffer", _inCellBuffer);
 				_computeShader.SetTexture(drawMomentums, "renderTexture", _gridRenderTexture);
 				_computeShader.Dispatch(drawMomentums, numberOfGroups, 1, 1);
+				_gridMaterial.mainTexture = _gridRenderTexture;
 				break;
 			case DisplayMode.Forces:
 				_computeShader.SetBuffer(drawForces, "inOutCellBuffer", _inCellBuffer);
 				_computeShader.SetTexture(drawForces, "renderTexture", _gridRenderTexture);
 				_computeShader.Dispatch(drawForces, numberOfGroups, 1, 1);
+				_gridMaterial.mainTexture = _gridRenderTexture;
 				break;
 			case DisplayMode.MassSAT:
 				_computeShader.SetBuffer(drawMassSAT, "inOutMassSATBuffer", _inMassSATBuffer);
 				_computeShader.SetTexture(drawMassSAT, "renderTexture", _gridRenderTexture);
 				_computeShader.Dispatch(drawMassSAT, numberOfGroups, 1, 1);
+				_gridMaterial.mainTexture = _gridRenderTexture;
 				break;
 			default:
 				break;
