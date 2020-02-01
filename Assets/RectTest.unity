@@ -141,16 +141,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e9d34e35c87f3464f938ce8d98b60364, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  Density: 50
   CellSize: 10
-  MaxCellOffset: 0.499
+  MaxCellOffset: 0.5
   CellPos1: {x: 0, y: 0}
-  MassRect1: {x: -1, y: -1, z: 5, w: 5}
+  MassRect1: {x: -5, y: -5, z: 5, w: 5}
   MassValue1: 1
   Vel1: {x: 1, y: 1}
   CellPos2: {x: 10, y: 0}
-  MassRect2: {x: -5, y: -5, z: 4, w: 2}
+  MassRect2: {x: -5, y: -5, z: 5, w: 5}
   MassValue2: 1
-  Vel2: {x: -1, y: -1.34}
+  Vel2: {x: -1, y: -1}
 --- !u!4 &2111468333
 Transform:
   m_ObjectHideFlags: 0

@@ -5,6 +5,7 @@ using UnityEngine;
 
 public class RectTest : MonoBehaviour
 {
+    public float Density = 1.0f;
     public float CellSize = 10.0f;
     public float MaxCellOffset = 0.5f;
     [Header("Cell1")]
@@ -51,8 +52,15 @@ public class RectTest : MonoBehaviour
             return new Vector4( xInf, yInf, xSup, ySup );
         }
     }
+    
+    public Vector4 AABBIntersection1 { get; private set; }
+    public Vector4 AABBIntersection2 { get; private set; }
+    public float AABBIntersectionMass1 { get; private set; }
+    public float AABBIntersectionMass2 { get; private set; }
+    public float ExpansionVel1 { get; private set; }
+    public float ExpansionVel2 { get; private set; }
 
-    Vector4 Intersect(Vector4 aabb1, Vector4 aabb2)
+    Vector4 IntersectAABBs(Vector4 aabb1, Vector4 aabb2)
     {
         float xInf1 = aabb1.x;
         float yInf1 = aabb1.y;
@@ -96,6 +104,13 @@ public class RectTest : MonoBehaviour
         Gizmos.DrawLine(new Vector3(CellPos2.x, 0, CellPos2.y),new Vector3(CellPos2.x + Vel2.x, 0, CellPos2.y + Vel2.y));
         Gizmos.DrawSphere(new Vector3(CellPos2.x, 0, CellPos2.y), CellSize / 50);
         
+        // expansion velocities
+
+        float cellMassRectArea1 = (MassRect1.z - MassRect1.x) * (MassRect1.w - MassRect1.y);
+        ExpansionVel1 = MassValue1 * Density / cellMassRectArea1;
+        float cellMassRectArea2 = (MassRect2.z - MassRect2.x) * (MassRect2.w - MassRect2.y);
+        ExpansionVel2 = MassValue2 * Density / cellMassRectArea2;
+
         // mass rects with offset
 
         Vector2 MassRectOffset1 = Vel1 * DeltaTime;
@@ -119,12 +134,12 @@ public class RectTest : MonoBehaviour
             CenterOfMass1.x+MassRectOffset1.x+ExtentOfMass1.x/2,
             CenterOfMass1.y+MassRectOffset1.y+ExtentOfMass1.y/2
         );
-        Vector4 aabbIntersection1 = Intersect(aabbMassRectWidthOffset1, aabbCell1);
+        AABBIntersection1 = IntersectAABBs(aabbMassRectWidthOffset1, aabbCell1);
         
         Gizmos.color = Color.Lerp(Color.gray, Color.yellow, 0.99f);
         Gizmos.DrawWireCube( 
-            new Vector3(aabbIntersection1.x+(aabbIntersection1.z-aabbIntersection1.x)/2,0.0f,aabbIntersection1.y+(aabbIntersection1.w-aabbIntersection1.y)/2), 
-            new Vector3((aabbIntersection1.z-aabbIntersection1.x),0,(aabbIntersection1.w-aabbIntersection1.y)) 
+            new Vector3(AABBIntersection1.x+(AABBIntersection1.z-AABBIntersection1.x)/2,0.0f,AABBIntersection1.y+(AABBIntersection1.w-AABBIntersection1.y)/2), 
+            new Vector3((AABBIntersection1.z-AABBIntersection1.x),0,(AABBIntersection1.w-AABBIntersection1.y)) 
         );
         
         // intersect <mass rect with offset #2> and <cell #1>
@@ -136,26 +151,25 @@ public class RectTest : MonoBehaviour
             CenterOfMass2.x+MassRectOffset2.x+ExtentOfMass2.x/2,
             CenterOfMass2.y+MassRectOffset2.y+ExtentOfMass2.y/2
         );
-        Vector4 aabbIntersection2 = Intersect(aabbMassRectWidthOffset2, aabbCell1);
+        AABBIntersection2 = IntersectAABBs(aabbMassRectWidthOffset2, aabbCell1);
         
         Gizmos.color = Color.Lerp(Color.gray, Color.green, 0.99f);
         Gizmos.DrawWireCube( 
-            new Vector3(aabbIntersection2.x+(aabbIntersection2.z-aabbIntersection2.x)/2,0.0f,aabbIntersection2.y+(aabbIntersection2.w-aabbIntersection2.y)/2), 
-            new Vector3((aabbIntersection2.z-aabbIntersection2.x),0,(aabbIntersection2.w-aabbIntersection2.y)) 
+            new Vector3(AABBIntersection2.x+(AABBIntersection2.z-AABBIntersection2.x)/2,0.0f,AABBIntersection2.y+(AABBIntersection2.w-AABBIntersection2.y)/2), 
+            new Vector3((AABBIntersection2.z-AABBIntersection2.x),0,(AABBIntersection2.w-AABBIntersection2.y)) 
         );
         
         // compute masses for rects
 
-        float cellArea = CellSize * CellSize;
-        float massRectArea1 = (aabbIntersection1.z - aabbIntersection1.x) * (aabbIntersection1.w - aabbIntersection1.y); 
-        float massRectArea2 = (aabbIntersection2.z - aabbIntersection2.x) * (aabbIntersection2.w - aabbIntersection2.y);
-        float mass1 = MassValue1 * massRectArea1 / cellArea;
-        float mass2 = MassValue2 * massRectArea2 / cellArea;
+        float massRectArea1 = (AABBIntersection1.z - AABBIntersection1.x) * (AABBIntersection1.w - AABBIntersection1.y); 
+        float massRectArea2 = (AABBIntersection2.z - AABBIntersection2.x) * (AABBIntersection2.w - AABBIntersection2.y);
+        AABBIntersectionMass1 = MassValue1 * massRectArea1 / cellMassRectArea1;
+        AABBIntersectionMass2 = MassValue2 * massRectArea2 / cellMassRectArea2;
         
         // compute result mass rect of cell #1
 
-        float totalMass = (mass1 + mass2);
-        Vector4 aabbResult = aabbIntersection1 * mass1 / totalMass + aabbIntersection2 * mass2 / totalMass;   
+        float totalMass = (AABBIntersectionMass1 + AABBIntersectionMass2);
+        Vector4 aabbResult = AABBIntersection1 * AABBIntersectionMass1 / totalMass + AABBIntersection2 * AABBIntersectionMass2 / totalMass;   
 
         Gizmos.color = Color.blue;
         Gizmos.DrawWireCube( 
