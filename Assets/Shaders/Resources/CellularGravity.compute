@@ -1,6 +1,8 @@
 ﻿
 #define GROUPSIZE 128
 
+#define EPSILON 5.96e-08
+
 //////////////////////////////////////////////////////////////////////////////////////
 
 struct Cell
@@ -15,12 +17,29 @@ struct RowStats
 {
     float maxMass;
     float maxVel;
+    float totalMass;
+};
+
+struct DebugCell
+{
+    float4 cellRect;
+    float4 massRect0;
+    float4 massRect1;
+    float4 rect0;
+    float4 rect1;
+    float4 rect2;
+    float4 rect3;
+    float4 rect4;
+    float4 rect5;
+    float4 rect6;
+    float4 rect7;
 };
 
 RWStructuredBuffer<Cell> inCellBuffer;
 RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
 RWStructuredBuffer<RowStats> outRowStatsBuffer;
+RWStructuredBuffer<DebugCell> outDebugCellBuffer;
 RWStructuredBuffer<float> inMassSATBuffer;
 RWStructuredBuffer<float> outMassSATBuffer;
 RWStructuredBuffer<float> inOutMassSATBuffer;
@@ -28,7 +47,6 @@ RWTexture2D<half4> renderTexture;
 
 float gravity;
 float cellSize;
-float cellArea;
 float deltaTime;
 float density;
 int width;
@@ -291,6 +309,80 @@ void IntegrateVelocity(uint3 id : SV_DispatchThreadID)
 
 #pragma kernel MomentumTransfer
 
+float4 IntersectRects(float4 rect1, float4 rect2)  
+{
+    float xInf1 = rect1.x;
+    float yInf1 = rect1.y;
+    float xSup1 = rect1.z;
+    float ySup1 = rect1.w;
+    float xInf2 = rect2.x;
+    float yInf2 = rect2.y;
+    float xSup2 = rect2.z;
+    float ySup2 = rect2.w;
+        
+    return float4
+    (
+        min( max( xInf1, xInf2 ), xSup2 ),
+        min( max( yInf1, yInf2 ), ySup2 ),
+        max( min( xSup1, xSup2 ), xInf2 ),
+        max( min( ySup1, ySup2 ), yInf2 )
+    );
+}
+
+float RectArea(float4 rect)
+{
+    return (rect.z-rect.x)*(rect.w-rect.y);
+}
+
+float4 FitToBounds(float4 rect, float4 bounds)
+{
+    if (rect.z - rect.x > bounds.z - bounds.x)
+    {
+        rect.x = bounds.x;
+        rect.z = bounds.z;
+    }
+    else if (rect.x < bounds.x)
+    {
+        float offset = bounds.x - rect.x;
+        rect.x += offset;
+        rect.z += offset;
+    }
+    else if (rect.z > bounds.z)
+    {
+        float offset = bounds.z - rect.z;
+        rect.x += offset;
+        rect.z += offset;
+    }    
+    if (rect.w - rect.y > bounds.w - bounds.y)
+    {
+        rect.y = bounds.y;
+        rect.w = bounds.w;
+    }
+    else if (rect.y < bounds.y)
+    {
+        float offset = bounds.y - rect.y;
+        rect.y += offset;
+        rect.w += offset;
+    }
+    else if (rect.w > bounds.w)
+    {
+        float offset = bounds.w - rect.w;
+        rect.y += offset;
+        rect.w += offset;
+    }
+
+    return rect;
+}
+
+float4 InflateRect(float4 rect, float rectArea, float inflatedRectArea, float4 bounds)
+{
+    float2 extents = float2( (rect.z-rect.x), (rect.w-rect.y) );
+    float2 center = float2( rect.x + extents.x / 2, rect.y + extents.y / 2 );
+    extents *= sqrt( inflatedRectArea / rectArea );
+    rect = float4( center.x - extents.x / 2, center.y - extents.y / 2, center.x + extents.x / 2, center.y + extents.y / 2 );
+    return FitToBounds( rect, bounds );
+}
+
 [numthreads(GROUPSIZE,1,1)]
 void MomentumTransfer(uint3 id : SV_DispatchThreadID)
 {
@@ -299,25 +391,69 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
     int length0 = width*height; 
         
     if( i < length0 )
-    {        
-        float cellArea = cellSize * cellSize;
-        
+    {
         int y0 = i / width;
         int x0 = i - y0 * width;
- 
-        outCellBuffer[i].force = inCellBuffer[i].force;
-
-        float2 iPos = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );
-        float2 iOffset = inCellBuffer[i].vel * deltaTime;
-        float offsetAreaRatio = CellOffsetArea( iPos, iOffset) / cellArea;
-        outCellBuffer[i].mass = inCellBuffer[i].mass - inCellBuffer[i].mass * offsetAreaRatio;
+            
+        float4 cellRect = float4
+        (
+            x0 * cellSize,
+            y0 * cellSize,
+            x0 * cellSize + cellSize,
+            y0 * cellSize + cellSize
+        );
         
-        if (outCellBuffer[i].mass < 0)
-        {
-            outCellBuffer[i].mass = 0;
+        outDebugCellBuffer[i].cellRect = cellRect;
+        outDebugCellBuffer[i].rect0 = float4(0,0,0,0);
+        outDebugCellBuffer[i].rect1 = float4(0,0,0,0);
+        outDebugCellBuffer[i].rect2 = float4(0,0,0,0);
+        outDebugCellBuffer[i].rect3 = float4(0,0,0,0);
+        outDebugCellBuffer[i].rect4 = float4(0,0,0,0);
+        outDebugCellBuffer[i].rect5 = float4(0,0,0,0);
+        outDebugCellBuffer[i].rect6 = float4(0,0,0,0);
+        outDebugCellBuffer[i].rect7 = float4(0,0,0,0);         
+        
+        // move mass-volume
+        
+        float mass = inCellBuffer[i].mass;
+        float2 vel = inCellBuffer[i].vel;
+        float4 rect = inCellBuffer[i].rect;
+        float rectArea = RectArea( rect );
+        
+        if( mass > EPSILON && rectArea > EPSILON )
+        {        
+            float2 offset = vel * deltaTime;
+            float4 offsetRect = rect + float4( offset, offset );
+        
+            float4 intersectionRect = IntersectRects( offsetRect, rect );
+            float intersectionRectArea = RectArea( intersectionRect );
+            
+            float intersectionRectAreaRatio = intersectionRectArea / rectArea;
+            mass = mass * intersectionRectAreaRatio;
+            
+            if (mass < EPSILON)
+            {
+                mass = 0;
+            }
+            
+            rect = intersectionRect;
+            rectArea = intersectionRectArea;
         }
+        else
+        {
+            mass = 0;
+            vel = float2( 0, 0 );
+            rect = cellRect;
+            rectArea = cellSize * cellSize;
+        }
+        
+        outDebugCellBuffer[i].massRect0 = rect;
                     
-        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;      
+        // velocity to momentum
+                            
+        vel = vel * mass;
+        
+        // move mass-volume of adjacent cells        
 
         for (int dy0 = -1; dy0 <= 1; dy0++)
         {
@@ -331,36 +467,87 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
                     if (x1 >= 0 && x1 < width && y1 >= 0 && y1 < height)
                     {
                         int j = y1 * width + x1;
-
-                        float2 jPos = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );                    
-                        float2 jOffset = inCellBuffer[j].vel * deltaTime;
-                        float overlappingArea = CellOverlappingArea( iPos, jPos + jOffset, cellSize);
-                        if (overlappingArea > 0)
+                        
+                        float adjacentMass = inCellBuffer[j].mass;
+                        if( adjacentMass > EPSILON )
                         {
-                            float overlappingAreaRatio = overlappingArea / cellArea;                             
-                            float dm = inCellBuffer[j].mass * overlappingAreaRatio;                            
-                            outCellBuffer[i].mass += dm;
-                            outCellBuffer[i].vel += inCellBuffer[j].vel * dm;                                
+                            float2 adjacentVel = inCellBuffer[j].vel;
+                            float4 adjacentRect = inCellBuffer[j].rect;
+                            float adjacentRectArea = RectArea( adjacentRect );
+                        
+                            if( adjacentRectArea > EPSILON )
+                            {                    
+                                float2 adjacentOffset = adjacentVel * deltaTime;
+                                float4 adjacentOffsetRect = adjacentRect + float4( adjacentOffset, adjacentOffset );
+                        
+                                adjacentOffsetRect = IntersectRects( adjacentOffsetRect, cellRect );
+                                float adjacentOffsetRectArea = RectArea( adjacentOffsetRect );
+
+                                if (adjacentOffsetRectArea > EPSILON)
+                                {
+                                    float adjacentOffsetRectAreaRatio = adjacentOffsetRectArea / adjacentRectArea;
+                                    float dm = adjacentMass * adjacentOffsetRectAreaRatio;                                                                                                    
+                                    mass += dm;
+                                    vel += adjacentVel * dm;
+                                    
+                                    rect = InflateRect( rect, rectArea, rectArea + adjacentRectArea, cellRect );
+                                    rectArea = RectArea( rect );
+                                    
+                                    if( dx0 == -1 && dy0 == -1 )
+                                    {
+                                        outDebugCellBuffer[i].rect0 = adjacentOffsetRect;
+                                    }
+                                    else if( dx0 == 0 && dy0 == -1 )
+                                    {
+                                        outDebugCellBuffer[i].rect1 = adjacentOffsetRect;
+                                    }
+                                    else if( dx0 == 1 && dy0 == -1 )
+                                    {
+                                        outDebugCellBuffer[i].rect2 = adjacentOffsetRect;
+                                    }
+                                    else if( dx0 == -1 && dy0 == 0 )
+                                    {
+                                        outDebugCellBuffer[i].rect3 = adjacentOffsetRect;
+                                    }
+                                    else if( dx0 == 1 && dy0 == 0 )
+                                    {
+                                        outDebugCellBuffer[i].rect4 = adjacentOffsetRect;
+                                    }
+                                    else if( dx0 == -1 && dy0 == 1 )
+                                    {
+                                        outDebugCellBuffer[i].rect5 = adjacentOffsetRect;
+                                    }
+                                    else if( dx0 == 0 && dy0 == 1 )
+                                    {
+                                        outDebugCellBuffer[i].rect6 = adjacentOffsetRect;
+                                    }
+                                    else if( dx0 == 1 && dy0 == 1 )
+                                    {
+                                        outDebugCellBuffer[i].rect7 = adjacentOffsetRect;
+                                    }
+                                }
+                            }
                         }                        
                     }
                 }
             }
         }
             
-        if (outCellBuffer[i].mass > 0 )
+        if ( mass > EPSILON )
         {
-            outCellBuffer[i].vel = outCellBuffer[i].vel / outCellBuffer[i].mass;              
+            outCellBuffer[i].rect = rect;
+            outCellBuffer[i].mass = mass;
+            outCellBuffer[i].vel = vel / mass;
+            outDebugCellBuffer[i].massRect1 = rect;                          
         }
         else
         {
+            outCellBuffer[i].rect = cellRect;
+            outCellBuffer[i].mass = 0;
             outCellBuffer[i].vel = float2( 0, 0 );
+            outDebugCellBuffer[i].massRect1 = cellRect;
         }
-    }
-    else
-    {
         outCellBuffer[i].force = inCellBuffer[i].force;
-        outCellBuffer[i].mass = inCellBuffer[i].mass;
-        outCellBuffer[i].vel = inCellBuffer[i].vel;
     }
 }
 
@@ -432,13 +619,15 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
             outCellBuffer[i].vel = float2( 0, 0 );
         }
         outCellBuffer[i].vel = inCellBuffer[i].vel;                  
-        outCellBuffer[i].force = inCellBuffer[i].force;                                    
+        outCellBuffer[i].force = inCellBuffer[i].force;
+        outCellBuffer[i].rect = inCellBuffer[i].rect;                                    
     }
     else
     {
         outCellBuffer[i].force = inCellBuffer[i].force;
         outCellBuffer[i].mass = inCellBuffer[i].mass;
         outCellBuffer[i].vel = inCellBuffer[i].vel;
+        outCellBuffer[i].rect = inCellBuffer[i].rect;
     }
 }
 
@@ -517,13 +706,15 @@ void ComputeRowStats(uint3 id : SV_DispatchThreadID)
     
         int index = y*width;
         rowStats.maxMass = inCellBuffer[index].mass;
-        rowStats.maxVel = length( inCellBuffer[index].vel );       
+        rowStats.maxVel = length( inCellBuffer[index].vel );
+        rowStats.totalMass = inCellBuffer[index].mass;
         index++;
 
         for( int x=1; x<width; x++, index++)
         {
             rowStats.maxMass = max( rowStats.maxMass, inCellBuffer[index].mass );
             rowStats.maxVel = max( rowStats.maxVel, length( inCellBuffer[index].vel ) );
+            rowStats.totalMass += inCellBuffer[index].mass;
         }
         
         outRowStatsBuffer[y] = rowStats;        
