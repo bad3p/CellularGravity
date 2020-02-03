@@ -20,26 +20,10 @@ struct RowStats
     float totalMass;
 };
 
-struct DebugCell
-{
-    float4 cellRect;
-    float4 massRect0;
-    float4 massRect1;
-    float4 rect0;
-    float4 rect1;
-    float4 rect2;
-    float4 rect3;
-    float4 rect4;
-    float4 rect5;
-    float4 rect6;
-    float4 rect7;
-};
-
 RWStructuredBuffer<Cell> inCellBuffer;
 RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
 RWStructuredBuffer<RowStats> outRowStatsBuffer;
-RWStructuredBuffer<DebugCell> outDebugCellBuffer;
 RWStructuredBuffer<float> inMassSATBuffer;
 RWStructuredBuffer<float> outMassSATBuffer;
 RWStructuredBuffer<float> inOutMassSATBuffer;
@@ -401,17 +385,7 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
             y0 * cellSize,
             x0 * cellSize + cellSize,
             y0 * cellSize + cellSize
-        );
-        
-        outDebugCellBuffer[i].cellRect = cellRect;
-        outDebugCellBuffer[i].rect0 = float4(0,0,0,0);
-        outDebugCellBuffer[i].rect1 = float4(0,0,0,0);
-        outDebugCellBuffer[i].rect2 = float4(0,0,0,0);
-        outDebugCellBuffer[i].rect3 = float4(0,0,0,0);
-        outDebugCellBuffer[i].rect4 = float4(0,0,0,0);
-        outDebugCellBuffer[i].rect5 = float4(0,0,0,0);
-        outDebugCellBuffer[i].rect6 = float4(0,0,0,0);
-        outDebugCellBuffer[i].rect7 = float4(0,0,0,0);         
+        );        
         
         // move mass-volume
         
@@ -446,8 +420,6 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
             rect = cellRect;
             rectArea = cellSize * cellSize;
         }
-        
-        outDebugCellBuffer[i].massRect0 = rect;
                     
         // velocity to momentum
                             
@@ -486,45 +458,13 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
                                 if (adjacentOffsetRectArea > EPSILON)
                                 {
                                     float adjacentOffsetRectAreaRatio = adjacentOffsetRectArea / adjacentRectArea;
-                                    float dm = adjacentMass * adjacentOffsetRectAreaRatio;                                                                                                    
+                                    float dm = adjacentMass * adjacentOffsetRectAreaRatio;
+                                    float massRatio = mass / dm;                                                                                                    
                                     mass += dm;
                                     vel += adjacentVel * dm;
-                                    
-                                    rect = InflateRect( rect, rectArea, rectArea + adjacentRectArea, cellRect );
+                                                                        
+                                    rect = InflateRect( rect, rectArea, rectArea + adjacentRectArea * massRatio, cellRect );
                                     rectArea = RectArea( rect );
-                                    
-                                    if( dx0 == -1 && dy0 == -1 )
-                                    {
-                                        outDebugCellBuffer[i].rect0 = adjacentOffsetRect;
-                                    }
-                                    else if( dx0 == 0 && dy0 == -1 )
-                                    {
-                                        outDebugCellBuffer[i].rect1 = adjacentOffsetRect;
-                                    }
-                                    else if( dx0 == 1 && dy0 == -1 )
-                                    {
-                                        outDebugCellBuffer[i].rect2 = adjacentOffsetRect;
-                                    }
-                                    else if( dx0 == -1 && dy0 == 0 )
-                                    {
-                                        outDebugCellBuffer[i].rect3 = adjacentOffsetRect;
-                                    }
-                                    else if( dx0 == 1 && dy0 == 0 )
-                                    {
-                                        outDebugCellBuffer[i].rect4 = adjacentOffsetRect;
-                                    }
-                                    else if( dx0 == -1 && dy0 == 1 )
-                                    {
-                                        outDebugCellBuffer[i].rect5 = adjacentOffsetRect;
-                                    }
-                                    else if( dx0 == 0 && dy0 == 1 )
-                                    {
-                                        outDebugCellBuffer[i].rect6 = adjacentOffsetRect;
-                                    }
-                                    else if( dx0 == 1 && dy0 == 1 )
-                                    {
-                                        outDebugCellBuffer[i].rect7 = adjacentOffsetRect;
-                                    }
                                 }
                             }
                         }                        
@@ -537,15 +477,13 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
         {
             outCellBuffer[i].rect = rect;
             outCellBuffer[i].mass = mass;
-            outCellBuffer[i].vel = vel / mass;
-            outDebugCellBuffer[i].massRect1 = rect;                          
+            outCellBuffer[i].vel = vel / mass;                         
         }
         else
         {
             outCellBuffer[i].rect = cellRect;
             outCellBuffer[i].mass = 0;
             outCellBuffer[i].vel = float2( 0, 0 );
-            outDebugCellBuffer[i].massRect1 = cellRect;
         }
         outCellBuffer[i].force = inCellBuffer[i].force;
     }
@@ -819,7 +757,7 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
             }
             else
             {
-                renderTexture[rtxy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
+                renderTexture[rtxy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (mass-Mass3) / (Mass4-Mass3) );
             }
         }
         else

@@ -220,18 +220,9 @@ public class RectTest : MonoBehaviour
 
         // compute result mass rect of cell #1
 
-        /*
-        float totalMass = (AABBIntersectionMass1 + AABBIntersectionMass2);
-        Vector4 aabbResult = AABBIntersection1 * AABBIntersectionMass1 / totalMass + AABBIntersection2 * AABBIntersectionMass2 / totalMass;   
-
-        Gizmos.color = Color.blue;
-        Gizmos.DrawWireCube( 
-            new Vector3(aabbResult.x+(aabbResult.z-aabbResult.x)/2,0.0f,aabbResult.y+(aabbResult.w-aabbResult.y)/2), 
-            new Vector3((aabbResult.z-aabbResult.x),0,(aabbResult.w-aabbResult.y)) 
-        );
-        */
-
-        float resultMassRectArea = massRectArea1 + massRectArea2;
+        float massRatio = AABBIntersectionMass2 / AABBIntersectionMass1; 
+        
+        float resultMassRectArea = massRectArea1 + massRectArea2 * massRatio;
 
         Vector2 aabbResultCenter = new Vector2
         (

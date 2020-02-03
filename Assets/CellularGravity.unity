@@ -688,12 +688,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   DeltaTime: {fileID: 2098226924}
   TotalMass: {fileID: 2071771855}
-  Resolution: 3
-  InitialMassMultiplier: 2
+  Resolution: 2
+  InitialMassMultiplier: 1
   CellSize: 50
   Gravity: 9.8
-  Density: 0.1
-  MaxCellOffset: 0.25
+  Density: 5
+  MaxCellOffset: 0.1
   MaxDeltaTime: 10
   DisplayMode: 0
   UseSAT: 1

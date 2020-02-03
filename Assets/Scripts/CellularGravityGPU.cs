@@ -162,11 +162,7 @@ public partial class CellularGravity : MonoBehaviour
 
         _computeShader.SetBuffer(_momentumTransfer, "inCellBuffer", _inCellBuffer);
         _computeShader.SetBuffer(_momentumTransfer, "outCellBuffer", _outCellBuffer);
-        _computeShader.SetBuffer(_momentumTransfer, "outDebugCellBuffer", _outDebugCellBuffer);
         _computeShader.Dispatch(_momentumTransfer, numberOfCellGroups, 1, 1);
-        /*
-        _outDebugCellBuffer.GetData(_debugCells);
-        */
         Swap(ref _inCellBuffer, ref _outCellBuffer);
 
         _computeShader.SetBuffer(_localExpansion, "inCellBuffer", _inCellBuffer);
@@ -174,58 +170,6 @@ public partial class CellularGravity : MonoBehaviour
         _computeShader.Dispatch(_localExpansion, numberOfCellGroups, 1, 1);
 
         Swap(ref _inCellBuffer, ref _outCellBuffer);
-        /*
-        for (int i = 0; i < _debugCells.Length; i++)
-        {
-            if (_debugCells[i].rect0.magnitude > 0 ||
-                _debugCells[i].rect1.magnitude > 0 ||
-                _debugCells[i].rect2.magnitude > 0 ||
-                _debugCells[i].rect3.magnitude > 0 ||
-                _debugCells[i].rect4.magnitude > 0 ||
-                _debugCells[i].rect5.magnitude > 0 ||
-                _debugCells[i].rect6.magnitude > 0 ||
-                _debugCells[i].rect7.magnitude > 0)
-            {
-                string s = _debugCells[i].cellRect.ToString() + "\n";
-                
-                s += "MassRect0: " + _debugCells[i].massRect0.ToString() + " area: " + RectArea(_debugCells[i].massRect0).ToString("F4") + "\n";
-                s += "MassRect1: " + _debugCells[i].massRect1.ToString() + " area: " + RectArea(_debugCells[i].massRect1).ToString("F4") + "\n";
-                
-                if (_debugCells[i].rect0.magnitude > 0)
-                {
-                    s += "Rect0: " + _debugCells[i].rect0.ToString() + " area: " + RectArea(_debugCells[i].rect0).ToString("F4") + "\n";
-                }
-                if (_debugCells[i].rect1.magnitude > 0)
-                {
-                    s += "Rect1: " + _debugCells[i].rect1.ToString() + " area: " + RectArea(_debugCells[i].rect1).ToString("F4")+ "\n";
-                }
-                if (_debugCells[i].rect2.magnitude > 0)
-                {
-                    s += "Rect2: " + _debugCells[i].rect2.ToString() + " area: " + RectArea(_debugCells[i].rect2).ToString("F4")+ "\n";
-                }
-                if (_debugCells[i].rect3.magnitude > 0)
-                {
-                    s += "Rect3: " + _debugCells[i].rect3.ToString() + " area: " + RectArea(_debugCells[i].rect3).ToString("F4")+ "\n";
-                }
-                if (_debugCells[i].rect4.magnitude > 0)
-                {
-                    s += "Rect4: " + _debugCells[i].rect4.ToString() + " area: " + RectArea(_debugCells[i].rect4).ToString("F4")+ "\n";
-                }
-                if (_debugCells[i].rect5.magnitude > 0)
-                {
-                    s += "Rect5: " + _debugCells[i].rect5.ToString() + " area: " + RectArea(_debugCells[i].rect5).ToString("F4")+ "\n";
-                }
-                if (_debugCells[i].rect6.magnitude > 0)
-                {
-                    s += "Rect6: " + _debugCells[i].rect6.ToString() + " area: " + RectArea(_debugCells[i].rect6).ToString("F4")+ "\n";
-                }
-                if (_debugCells[i].rect7.magnitude > 0)
-                {
-                    s += "Rect7: " + _debugCells[i].rect7.ToString() + " area: " + RectArea(_debugCells[i].rect7).ToString("F4")+ "\n";
-                }
-                Debug.Log(s);
-            }
-        }*/
     }
 }
 

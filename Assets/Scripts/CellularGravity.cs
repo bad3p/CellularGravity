@@ -57,23 +57,6 @@ public partial class CellularGravity : MonoBehaviour
 		
 		public const int SizeOf = 12; // ComputeShader stride
 	};
-	
-	public struct DebugCell
-	{
-		public Vector4 cellRect;
-		public Vector4 massRect0;
-		public Vector4 massRect1;
-		public Vector4 rect0;
-		public Vector4 rect1;
-		public Vector4 rect2;
-		public Vector4 rect3;
-		public Vector4 rect4;
-		public Vector4 rect5;
-		public Vector4 rect6;
-		public Vector4 rect7;
-		
-		public const int SizeOf = 4*4*11; // ComputeShader stride
-	};
 
 	private int _width;
 	private int _height;
@@ -81,13 +64,11 @@ public partial class CellularGravity : MonoBehaviour
 	private Material _gridMaterial;
 	private Cell[] _cells = new Cell[0];
 	private RowStats[] _rowStats = new RowStats[0];
-	private DebugCell[] _debugCells = new DebugCell[0];
 	private ComputeBuffer _inCellBuffer = null;
 	private ComputeBuffer _outCellBuffer = null;
 	private ComputeBuffer _inMassSATBuffer = null;
 	private ComputeBuffer _outMassSATBuffer = null;
 	private ComputeBuffer _outRowStatsBuffer = null;
-	private ComputeBuffer _outDebugCellBuffer = null;
 	private ComputeShader _computeShader = null;
 	private RenderTexture _gridRenderTexture = null;
 	private RenderTexture _largeRenderTexture = null;
@@ -149,14 +130,12 @@ public partial class CellularGravity : MonoBehaviour
 			
 		_cells = new Cell[_width*_height];
 		_rowStats = new RowStats[_height];
-		_debugCells = new DebugCell[_width * _height];
 
 		_inCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );			
 		_outCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );
 		_inMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
 		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
 		_outRowStatsBuffer = new ComputeBuffer( _rowStats.Length, RowStats.SizeOf );
-		_outDebugCellBuffer = new ComputeBuffer( _debugCells.Length, DebugCell.SizeOf );
 		_computeShader = Resources.Load<ComputeShader>( "CellularGravity" );
 
 		FindKernels( _computeShader );
