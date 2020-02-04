@@ -24,6 +24,7 @@ public partial class CellularGravity : MonoBehaviour
 {
 	[Header("UI")]
 	public Text DeltaTime;
+	public Text TotalMass;
 	[Header("Settings")]
 	public Resolution Resolution = Resolution._81x81;
 	public float InitialMassMultiplier = 1.0f;
@@ -51,8 +52,9 @@ public partial class CellularGravity : MonoBehaviour
 	{
 		public float maxMass; // sizeof(float) = 4
 		public float maxVel;  // sizeof(float) = 4
+		public float totalMass; // sizeof(float) = 4
 		
-		public const int SizeOf = 8; // ComputeShader stride
+		public const int SizeOf = 12; // ComputeShader stride
 	};
 
 	private int _width;

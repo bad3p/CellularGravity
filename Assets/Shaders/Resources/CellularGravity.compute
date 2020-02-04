@@ -14,6 +14,7 @@ struct RowStats
 {
     float maxMass;
     float maxVel;
+    float totalMass;
 };
 
 RWStructuredBuffer<Cell> inCellBuffer;
@@ -514,13 +515,15 @@ void ComputeRowStats(uint3 id : SV_DispatchThreadID)
     
         int index = y*width;
         rowStats.maxMass = inCellBuffer[index].mass;
-        rowStats.maxVel = length( inCellBuffer[index].vel );       
+        rowStats.maxVel = length( inCellBuffer[index].vel );
+        rowStats.totalMass = inCellBuffer[index].mass;
         index++;
 
         for( int x=1; x<width; x++, index++)
         {
             rowStats.maxMass = max( rowStats.maxMass, inCellBuffer[index].mass );
             rowStats.maxVel = max( rowStats.maxVel, length( inCellBuffer[index].vel ) );
+            rowStats.totalMass += inCellBuffer[index].mass;
         }
         
         outRowStatsBuffer[y] = rowStats;        

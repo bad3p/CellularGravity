@@ -111,10 +111,12 @@ public partial class CellularGravity : MonoBehaviour
 
         float maxMass = 0.0f;
         float maxVel = 0.0f;
+        float totalMass = 0.0f;
         for (int i = 0; i < _rowStats.Length; i++)
         {
             maxMass = Mathf.Max(maxMass, _rowStats[i].maxMass);
             maxVel = Mathf.Max(maxVel, _rowStats[i].maxVel);
+            totalMass += _rowStats[i].totalMass;
         }
 
         _computeShader.SetBuffer(_computeGravityForceWithSAT, "inOutCellBuffer", _inCellBuffer);
@@ -126,6 +128,7 @@ public partial class CellularGravity : MonoBehaviour
         deltaTime = Mathf.Min(deltaTime, (CellSize / maxExpansionVel * MaxCellOffset));
         if (deltaTime > MaxDeltaTime) deltaTime = MaxDeltaTime;
         DeltaTime.text = deltaTime.ToString("F5");
+        TotalMass.text = totalMass.ToString("F5");
 
         _computeShader.SetFloat("deltaTime", deltaTime);
         _computeShader.SetBuffer(_integrateVelocity, "inOutCellBuffer", _inCellBuffer);
