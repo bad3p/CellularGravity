@@ -146,11 +146,11 @@ MonoBehaviour:
   MaxCellOffset: 0.5
   CellPos1: {x: 0, y: 0}
   MassRect1: {x: -5, y: -5, z: 5, w: 5}
-  MassValue1: 1
+  MassValue1: 1.19
   Vel1: {x: 1, y: 1}
   CellPos2: {x: 10, y: 0}
   MassRect2: {x: -5, y: -5, z: 5, w: 5}
-  MassValue2: 0.3
+  MassValue2: 0.23
   Vel2: {x: -1.56, y: -1.11}
 --- !u!4 &2111468333
 Transform:
