@@ -220,9 +220,10 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                 }
             }
         }
-        
+                
         int offset = 3;
-        while( offset <= max(width,height) )
+        int maxOffset = max(width,height);                
+        while( offset <= maxOffset )
         {
             int halfOffset = offset / 2;
         
@@ -235,32 +236,34 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                         int y1 = y0 + dy0 * offset;
                         int x1 = x0 + dx0 * offset;
                         
-                        int yTop = max( 0, y1 - halfOffset - 1 );
-                        int xLeft = max( 0, x1 - halfOffset - 1 );                        
-                        int yBottom = min( height0 - 1, y1 + halfOffset );
-                        int xRight = min( width0 - 1, x1 + halfOffset );
+                        int yMin = max( 0, y1 - halfOffset - 1 );
+                        int xMin = max( 0, x1 - halfOffset - 1 );                        
+                        int yMax = min( height0 - 1, y1 + halfOffset );
+                        int xMax = min( width0 - 1, x1 + halfOffset );
                         
-                        if( yTop < yBottom && xLeft < xRight )
+                        if( yMin <= yMax && xMin <= xMax )
                         {
-                            int ilt = yTop * width0 + xLeft;
-                            int irt = yTop * width0 + xRight;
-                            int irb = yBottom * width0 + xRight;
-                            int ilb = yBottom * width0 + xLeft;
+                            int iMinMin = yMin * width0 + xMin;
+                            int iMaxMin = yMin * width0 + xMax;
+                            int iMaxMax = yMax * width0 + xMax;
+                            int iMinMax = yMax * width0 + xMin;
                             
-                            float lx = xLeft * cellSize + cellSize / 2;
-                            float rx = xRight * cellSize + cellSize / 2;
-                            float ty = yTop * cellSize + cellSize / 2;
-                            float by = yBottom * cellSize + cellSize / 2;
+                            float lx = xMin * cellSize + cellSize / 2;
+                            float rx = xMax * cellSize + cellSize / 2;
+                            float ty = yMin * cellSize + cellSize / 2;
+                            float by = yMax * cellSize + cellSize / 2;
                             
                             float2 virtualCellPos = ( float2(lx,ty) +
                                                       float2(rx,ty) +
                                                       float2(rx,by) +
                                                       float2(lx,by) ) / 4;
+                                                 
+                            virtualCellPos += float2( cellSize/2, cellSize/2 );                                                 
                                                     
-                            float2 virtualCellMass = inOutMassSATBuffer[irb] -
-                                                     inOutMassSATBuffer[ilb] -
-                                                     inOutMassSATBuffer[irt] +
-                                                     inOutMassSATBuffer[ilt];
+                            float2 virtualCellMass = inOutMassSATBuffer[iMaxMax] -
+                                                     inOutMassSATBuffer[iMinMax] -                                                     
+                                                     inOutMassSATBuffer[iMaxMin] +
+                                                     inOutMassSATBuffer[iMinMin];
                                                      
                             force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );                                                   
                         }
