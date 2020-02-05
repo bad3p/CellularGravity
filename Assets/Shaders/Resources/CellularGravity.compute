@@ -248,6 +248,7 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                                                       float2(rx,ty) +
                                                       float2(rx,by) +
                                                       float2(lx,by) ) / 4;
+                            virtualCellPos += float2( cellSize/2, cellSize/2 );
                                                     
                             float2 virtualCellMass = inOutMassSATBuffer[irb] -
                                                      inOutMassSATBuffer[ilb] -
