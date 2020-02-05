@@ -18,6 +18,9 @@ public partial class CellularGravity : MonoBehaviour
     private int _transposeMassSAT;
     private int _computeMassSAT;
     private int _computeRowStats;
+    private int _cleanupMassPropagationBuffer;
+    private int _massPropagationPrepass;
+    private int _massPropagationPass;
 
     private void FindKernels(ComputeShader computeShader)
     {
@@ -29,6 +32,9 @@ public partial class CellularGravity : MonoBehaviour
         _transposeMassSAT = computeShader.FindKernel("TransposeMassSAT");
         _computeMassSAT = computeShader.FindKernel("ComputeMassSAT");
         _computeRowStats = computeShader.FindKernel("ComputeRowStats");
+        _cleanupMassPropagationBuffer = computeShader.FindKernel("CleanupMassPropagationBuffer"); 
+        _massPropagationPrepass = computeShader.FindKernel("MassPropagationPrepass");
+        _massPropagationPass = computeShader.FindKernel("MassPropagationPass");
     }
 
     private static void Swap(ref ComputeBuffer cbRef0, ref ComputeBuffer cbRef1)
@@ -133,7 +139,27 @@ public partial class CellularGravity : MonoBehaviour
         _computeShader.SetFloat("deltaTime", deltaTime);
         _computeShader.SetBuffer(_integrateVelocity, "inOutCellBuffer", _inCellBuffer);
         _computeShader.Dispatch(_integrateVelocity, numberOfCellGroups, 1, 1);
+        
+        // momentum transfer with local expansion
+        
+        _computeShader.SetBuffer(_cleanupMassPropagationBuffer, "inOutMassPropagationBuffer", _inOutMassPropagationBuffer);
+        _computeShader.Dispatch(_cleanupMassPropagationBuffer, numberOfCellGroups, 1, 1);
+        
+        _computeShader.SetBuffer(_massPropagationPrepass, "inOutMassPropagationBuffer", _inOutMassPropagationBuffer);
+        _computeShader.SetBuffer(_massPropagationPrepass, "inOutCellRectBuffer", _inOutCellRectBuffer);
+        _computeShader.SetBuffer(_massPropagationPrepass, "inCellBuffer", _inCellBuffer);
+        _computeShader.Dispatch(_massPropagationPrepass, numberOfCellGroups, 1, 1);
+        
+        _computeShader.SetBuffer(_massPropagationPass, "inOutMassPropagationBuffer", _inOutMassPropagationBuffer);
+        _computeShader.SetBuffer(_massPropagationPass, "inOutCellRectBuffer", _inOutCellRectBuffer);
+        _computeShader.SetBuffer(_massPropagationPass, "inCellBuffer", _inCellBuffer);
+        _computeShader.SetBuffer(_massPropagationPass, "outCellBuffer", _outCellBuffer);
+        _computeShader.Dispatch(_massPropagationPass, numberOfCellGroups, 1, 1);
 
+        Swap(ref _inCellBuffer, ref _outCellBuffer);
+
+        // momentum transfer with separate local expansion pass
+        /*
         _computeShader.SetBuffer(_momentumTransfer, "inCellBuffer", _inCellBuffer);
         _computeShader.SetBuffer(_momentumTransfer, "outCellBuffer", _outCellBuffer);
         _computeShader.Dispatch(_momentumTransfer, numberOfCellGroups, 1, 1);
@@ -145,6 +171,7 @@ public partial class CellularGravity : MonoBehaviour
         _computeShader.Dispatch(_localExpansion, numberOfCellGroups, 1, 1);
 
         Swap(ref _inCellBuffer, ref _outCellBuffer);
+        */
     }
 }
 

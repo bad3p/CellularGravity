@@ -1,6 +1,10 @@
 ﻿
 #define GROUPSIZE 128
 
+#define MAX_MASS_PROPAGATION_INDICES 9
+
+#define EPSILON 5.96e-08
+
 //////////////////////////////////////////////////////////////////////////////////////
 
 struct Cell
@@ -17,6 +21,12 @@ struct RowStats
     float totalMass;
 };
 
+struct MassPropagation
+{
+	int count;
+	int indices[MAX_MASS_PROPAGATION_INDICES];	
+};
+
 RWStructuredBuffer<Cell> inCellBuffer;
 RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
@@ -24,6 +34,8 @@ RWStructuredBuffer<RowStats> outRowStatsBuffer;
 RWStructuredBuffer<float> inMassSATBuffer;
 RWStructuredBuffer<float> outMassSATBuffer;
 RWStructuredBuffer<float> inOutMassSATBuffer;
+RWStructuredBuffer<float4> inOutCellRectBuffer;
+RWStructuredBuffer<MassPropagation> inOutMassPropagationBuffer;
 RWTexture2D<half4> renderTexture; 
 
 float gravity;
@@ -282,6 +294,153 @@ void IntegrateVelocity(uint3 id : SV_DispatchThreadID)
         {
             inOutCellBuffer[i].vel = float2( 0, 0 ); 
         }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel CleanupMassPropagationBuffer
+
+[numthreads(GROUPSIZE,1,1)]
+void CleanupMassPropagationBuffer(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);  
+    
+    if( i < width*height )
+    {    
+        inOutMassPropagationBuffer[i].count = 0;
+        for( int j=0; j<MAX_MASS_PROPAGATION_INDICES; j++ )
+        {
+            inOutMassPropagationBuffer[i].indices[j] = 0;
+        }        
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel MassPropagationPrepass
+
+[numthreads(GROUPSIZE,1,1)]
+void MassPropagationPrepass(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);  
+    
+    if( i < width*height )
+    {
+        int y = i / width;
+        int x = i - y * width;
+        
+        float cellExtents = float2( cellSize, cellSize );
+        float cellHalfExtents = cellExtents / 2;
+        
+        float2 cellOffset = inCellBuffer[i].vel * deltaTime; 
+        float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents + cellOffset;
+        float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
+        
+        float expansionVel = inCellBuffer[i].mass * density / (cellSize*cellSize);         
+        float expansion = ( expansionVel * deltaTime ) / 2;
+        cellRect += float4( -expansion, -expansion, expansion, expansion );
+        
+        inOutCellRectBuffer[i] = cellRect;
+        
+        int2 xyInf = floor( cellRect.xy / cellSize );
+        int2 xySup = floor( cellRect.zw / cellSize );
+        
+        for (int y1 = xyInf.y; y1 <= xySup.y; y1++)
+        {
+            for (int x1 = xyInf.x; x1 <= xySup.x; x1++)
+            {
+                int j = y1 * width + x1;
+                
+                int writeIndex;
+                InterlockedAdd( inOutMassPropagationBuffer[j].count, 1, writeIndex );
+                if( writeIndex < MAX_MASS_PROPAGATION_INDICES )
+                {
+                    inOutMassPropagationBuffer[j].indices[writeIndex] = i;
+                }
+            }
+        }                   
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel MassPropagationPass
+
+float4 IntersectRects(float4 rect1, float4 rect2)  
+{
+    float xInf1 = rect1.x;
+    float yInf1 = rect1.y;
+    float xSup1 = rect1.z;
+    float ySup1 = rect1.w;
+    float xInf2 = rect2.x;
+    float yInf2 = rect2.y;
+    float xSup2 = rect2.z;
+    float ySup2 = rect2.w;
+        
+    return float4
+    (
+        min( max( xInf1, xInf2 ), xSup2 ),
+        min( max( yInf1, yInf2 ), ySup2 ),
+        max( min( xSup1, xSup2 ), xInf2 ),
+        max( min( ySup1, ySup2 ), yInf2 )
+    );
+}
+
+float RectArea(float4 rect)
+{
+    return (rect.z-rect.x)*(rect.w-rect.y);
+}
+
+[numthreads(GROUPSIZE,1,1)]
+void MassPropagationPass(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);  
+    
+    if( i < width*height )
+    {
+        int y = i / width;
+        int x = i - y * width;
+        
+        float cellExtents = float2( cellSize, cellSize );
+        float cellHalfExtents = cellExtents / 2;
+        
+        float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents;
+        float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
+        
+        float cellMass = 0;
+        float2 cellMassVel = float2( 0, 0 ); 
+        
+        int count = min( inOutMassPropagationBuffer[i].count, MAX_MASS_PROPAGATION_INDICES );
+        for (int j = 0; j <= count; j++)
+        {
+            int k = inOutMassPropagationBuffer[i].indices[j];            
+            
+            float4 otherCellRect = inOutCellRectBuffer[k];            
+            float4 intersectionRect = IntersectRects( cellRect, otherCellRect );
+            float intersectionRectArea = RectArea( intersectionRect );
+            
+            if( intersectionRectArea > EPSILON )
+            {            
+                float otherCellRectArea = RectArea( otherCellRect );
+                float intersectionRectAreaRatio = intersectionRectArea / otherCellRectArea;
+                float deltaMass = intersectionRectAreaRatio * inCellBuffer[k].mass;
+                cellMass += deltaMass;
+                cellMassVel += deltaMass * inCellBuffer[k].vel;
+            } 
+        }
+        
+        if( cellMass > EPSILON ) 
+        {
+            outCellBuffer[i].mass = cellMass;
+            outCellBuffer[i].vel = cellMassVel / cellMass;
+        }
+        else
+        {
+            outCellBuffer[i].mass = 0;
+            outCellBuffer[i].vel = float2( 0, 0 );
+        }
+        outCellBuffer[i].force = inCellBuffer[i].force; 
     }
 }
 

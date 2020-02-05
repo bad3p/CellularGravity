@@ -56,6 +56,22 @@ public partial class CellularGravity : MonoBehaviour
 		
 		public const int SizeOf = 12; // ComputeShader stride
 	};
+	
+	public struct MassPropagation
+	{
+		public int count;
+		public int i0;
+		public int i1;
+		public int i2;
+		public int i3;
+		public int i4;
+		public int i5;
+		public int i6;
+		public int i7;
+		public int i8;
+
+		public const int SizeOf = 4*10; // ComputeShader stride
+	};
 
 	private int _width;
 	private int _height;
@@ -63,11 +79,14 @@ public partial class CellularGravity : MonoBehaviour
 	private Material _gridMaterial;
 	private Cell[] _cells = new Cell[0];
 	private RowStats[] _rowStats = new RowStats[0];
+	private MassPropagation[] _massPropagations = new MassPropagation[0];
 	private ComputeBuffer _inCellBuffer = null;
 	private ComputeBuffer _outCellBuffer = null;
 	private ComputeBuffer _inMassSATBuffer = null;
 	private ComputeBuffer _outMassSATBuffer = null;
 	private ComputeBuffer _outRowStatsBuffer = null;
+	private ComputeBuffer _inOutCellRectBuffer = null;
+	private ComputeBuffer _inOutMassPropagationBuffer = null;
 	private ComputeShader _computeShader = null;
 	private RenderTexture _gridRenderTexture = null;
 
@@ -123,12 +142,15 @@ public partial class CellularGravity : MonoBehaviour
 			
 		_cells = new Cell[_width*_height];
 		_rowStats = new RowStats[_height];
+		_massPropagations = new MassPropagation[_width*_height];
 
 		_inCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );			
 		_outCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );
 		_inMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
 		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
 		_outRowStatsBuffer = new ComputeBuffer( _rowStats.Length, RowStats.SizeOf );
+		_inOutCellRectBuffer = new ComputeBuffer(_cells.Length, sizeof(float) * 4);
+		_inOutMassPropagationBuffer = new ComputeBuffer(_cells.Length, MassPropagation.SizeOf);
 		_computeShader = Resources.Load<ComputeShader>( "CellularGravity" );
 
 		FindKernels( _computeShader );
@@ -147,6 +169,8 @@ public partial class CellularGravity : MonoBehaviour
 		_inMassSATBuffer.Release();
 		_outMassSATBuffer.Release();
 		_outRowStatsBuffer.Release();
+		_inOutCellRectBuffer.Release();
+		_inOutMassPropagationBuffer.Release();
 	}
 
 	public void OnShowMasses(string arg)
