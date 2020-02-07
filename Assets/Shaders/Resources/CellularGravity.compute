@@ -103,7 +103,7 @@ float CellOverlappingArea(float2 pos0, float2 pos1, float cellSize0, float cellS
  {
     float2 dir = p1 - p0;
     float r = length(dir);
-    if (r > 0)
+    if (r > EPSILON )
     {
         dir *= 1.0f / r;
         return dir * (m0 * m1 * gravity / ( r * r ));
@@ -289,7 +289,7 @@ void IntegrateVelocity(uint3 id : SV_DispatchThreadID)
     
     if( i < width*height )
     {    
-        if (inOutCellBuffer[i].mass > 0)
+        if (inOutCellBuffer[i].mass > EPSILON)
         {
             inOutCellBuffer[i].vel += inOutCellBuffer[i].force / inOutCellBuffer[i].mass * deltaTime; 
         }
@@ -433,7 +433,7 @@ void MassPropagationPass(uint3 id : SV_DispatchThreadID)
             } 
         }
         
-        if( cellMass > EPSILON ) 
+        if( cellMass > EPSILON && i != 0 ) 
         {
             outCellBuffer[i].mass = cellMass;
             outCellBuffer[i].vel = cellMassVel / cellMass;
@@ -472,7 +472,7 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
         float offsetAreaRatio = CellOffsetArea( iPos, iOffset) / cellArea;
         outCellBuffer[i].mass = inCellBuffer[i].mass - inCellBuffer[i].mass * offsetAreaRatio;
         
-        if (outCellBuffer[i].mass < 0)
+        if (outCellBuffer[i].mass < EPSILON)
         {
             outCellBuffer[i].mass = 0;
         }
@@ -495,7 +495,7 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
                         float2 jPos = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );                    
                         float2 jOffset = inCellBuffer[j].vel * deltaTime;
                         float overlappingArea = CellOverlappingArea( iPos, jPos + jOffset, cellSize);
-                        if (overlappingArea > 0)
+                        if (overlappingArea > EPSILON)
                         {
                             float overlappingAreaRatio = overlappingArea / cellArea;                             
                             float dm = inCellBuffer[j].mass * overlappingAreaRatio;                            
@@ -507,7 +507,7 @@ void MomentumTransfer(uint3 id : SV_DispatchThreadID)
             }
         }
             
-        if (outCellBuffer[i].mass > 0 )
+        if (outCellBuffer[i].mass > EPSILON )
         {
             outCellBuffer[i].vel = outCellBuffer[i].vel / outCellBuffer[i].mass;              
         }
@@ -570,7 +570,7 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
 
                         float2 jPos = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );                        
                         float overlappingArea = CellOverlappingArea( iPos, jPos, cellSize, expandedCellSize);
-                        if( overlappingArea > 0 )
+                        if( overlappingArea > EPSILON )
                         {
                             float overlappingAreaRatio = overlappingArea / expandedCellArea;
                             float dm = inCellBuffer[j].mass * overlappingAreaRatio;
@@ -583,7 +583,7 @@ void LocalExpansion(uint3 id : SV_DispatchThreadID)
             }
         }
         
-        if (outCellBuffer[i].mass > 0 )
+        if (outCellBuffer[i].mass > EPSILON )
         {
             outCellBuffer[i].vel = outCellBuffer[i].vel / outCellBuffer[i].mass;              
         }
