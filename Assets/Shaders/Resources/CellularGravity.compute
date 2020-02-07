@@ -227,11 +227,14 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
         {
             int halfOffset = offset / 2;
         
-            for (int dy0 = -1; dy0 <= 1; dy0++)
+            for (int dy0 = -2; dy0 <= 2; dy0++)
             {
-                for (int dx0 = -1; dx0 <= 1; dx0++)
+                for (int dx0 = -2; dx0 <= 2; dx0++)
                 {
-                    if ( !(dy0 == 0 && dx0 == 0) )
+                    int adx0 = (dx0<0) ? -dx0 : dx0;  
+                    int ady0 = (dy0<0) ? -dy0 : dy0;
+                
+                    if ( !(dy0 == 0 && dx0 == 0) && !(adx0 == 2 && ady0 == 2) )
                     {
                         int y1 = y0 + dy0 * offset;
                         int x1 = x0 + dx0 * offset;
@@ -240,6 +243,23 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                         int xMin = max( 0, x1 - halfOffset - 1 );                        
                         int yMax = min( height0 - 1, y1 + halfOffset );
                         int xMax = min( width0 - 1, x1 + halfOffset );
+                        
+                        if( dy0 == 0 && dx0 == -2 )
+                        {
+                            xMax -= (offset/3);
+                        }
+                        if( dy0 == 0 && dx0 == 2 )
+                        {
+                            xMin += (offset/3);
+                        }
+                        if( dx0 == 0 && dy0 == -2 )
+                        {
+                            yMax -= (offset/3);
+                        }
+                        if( dx0 == 0 && dy0 == 2 )
+                        {
+                            yMin += (offset/3);
+                        }
                         
                         if( yMin < yMax && xMin < xMax )
                         {
