@@ -787,7 +787,7 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
         const float Mass5 = 10;
         
         const half4 VacuumColor = half4( 0,0,0,0 );
-        const half4 Color0 = half4( 0.525, 0, 0.525, 1 );
+        const half4 Color0 = half4( 0.5, 0, 0.5, 1 );
         const half4 Color1 = half4( 0,0,1,1 );
         const half4 Color2 = half4( 0,1,0,1 );
         const half4 Color3 = half4( 1,1,0,1 );
