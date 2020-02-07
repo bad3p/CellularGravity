@@ -689,14 +689,13 @@ MonoBehaviour:
   DeltaTime: {fileID: 2098226924}
   TotalMass: {fileID: 1414797702}
   Resolution: 2
-  InitialMassMultiplier: 0.5
+  InitialMassMultiplier: 2
   CellSize: 100
-  Gravity: 9.8
-  Density: 1000
+  Gravity: 3.2
+  Density: 50
   MaxCellOffset: 1
   MaxDeltaTime: 10
   DisplayMode: 0
-  UseSAT: 1
   MassTexture: {fileID: 2800000, guid: f888f8a9b88ddd442bfe129c484456bb, type: 3}
   MassGradient:
     serializedVersion: 2

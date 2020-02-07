@@ -31,9 +31,9 @@ RWStructuredBuffer<Cell> inCellBuffer;
 RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
 RWStructuredBuffer<RowStats> outRowStatsBuffer;
-RWStructuredBuffer<float> inMassSATBuffer;
-RWStructuredBuffer<float> outMassSATBuffer;
-RWStructuredBuffer<float> inOutMassSATBuffer;
+RWStructuredBuffer<float4> inMassSATBuffer;
+RWStructuredBuffer<float4> outMassSATBuffer;
+RWStructuredBuffer<float4> inOutMassSATBuffer;
 RWStructuredBuffer<float4> inOutCellRectBuffer;
 RWStructuredBuffer<MassPropagation> inOutMassPropagationBuffer;
 RWTexture2D<half4> renderTexture; 
@@ -241,7 +241,7 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                         int yMax = min( height0 - 1, y1 + halfOffset );
                         int xMax = min( width0 - 1, x1 + halfOffset );
                         
-                        if( yMin <= yMax && xMin <= xMax )
+                        if( yMin < yMax && xMin < xMax )
                         {
                             int iMinMin = yMin * width0 + xMin;
                             int iMaxMin = yMin * width0 + xMax;
@@ -251,19 +251,17 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                             float lx = xMin * cellSize + cellSize / 2;
                             float rx = xMax * cellSize + cellSize / 2;
                             float ty = yMin * cellSize + cellSize / 2;
-                            float by = yMax * cellSize + cellSize / 2;
-                            
-                            float2 virtualCellPos = ( float2(lx,ty) +
-                                                      float2(rx,ty) +
-                                                      float2(rx,by) +
-                                                      float2(lx,by) ) / 4;
-                                                 
-                            virtualCellPos += float2( cellSize/2, cellSize/2 );                                                 
+                            float by = yMax * cellSize + cellSize / 2;                                    
                                                     
-                            float2 virtualCellMass = inOutMassSATBuffer[iMaxMax] -
-                                                     inOutMassSATBuffer[iMinMax] -                                                     
-                                                     inOutMassSATBuffer[iMaxMin] +
-                                                     inOutMassSATBuffer[iMinMin];
+                            float4 virtualCellMassPos = inOutMassSATBuffer[iMaxMax] -
+                                                        inOutMassSATBuffer[iMinMax] -                                                     
+                                                        inOutMassSATBuffer[iMaxMin] +
+                                                        inOutMassSATBuffer[iMinMin];
+                                  
+                            float virtualCellMass = virtualCellMassPos.x;
+                            float virtualCellWeight = virtualCellMassPos.y;                            
+                            float2 virtualCellPos = virtualCellMassPos.zw;
+                            virtualCellPos = virtualCellPos / virtualCellWeight; 
                                                      
                             force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );                                                   
                         }
@@ -615,7 +613,14 @@ void InitMassSAT(uint3 id : SV_DispatchThreadID)
         
     if( i < length )
     {
-        outMassSATBuffer[i] = inCellBuffer[i].mass;
+        int y = i / width;
+        int x = i - y * width;
+        
+        float mass = inCellBuffer[i].mass;
+        float weight = 1.0 + inCellBuffer[i].mass;
+        float2 pos = float2( x * cellSize + cellSize / 2, y * cellSize + cellSize / 2 );   
+        
+        outMassSATBuffer[i] = float4( mass, weight, pos * weight );
     }    
 }
 
@@ -650,7 +655,7 @@ void ComputeMassSAT(uint3 id : SV_DispatchThreadID)
     if (y < height)
     {
         int index = y*width;
-        float accumulatedMass = inMassSATBuffer[index]; 
+        float4 accumulatedMass = inMassSATBuffer[index]; 
         outMassSATBuffer[index] = accumulatedMass;        
         index++;
          
@@ -714,25 +719,26 @@ void DrawMassSAT(uint3 id : SV_DispatchThreadID)
         const float Mass3 = 1000;
         const float Mass4 = 10000;
         
-        if( inOutMassSATBuffer[i] < Mass0 )
+        float mass = inOutMassSATBuffer[i].x;
+        if( mass < Mass0 )
         {
-            renderTexture[xy] = lerp( half4(0,0,0,1), half4(0,0,1,1), inOutMassSATBuffer[i] / Mass0 );   
+            renderTexture[xy] = lerp( half4(0,0,0,1), half4(0,0,1,1), mass / Mass0 );   
         } 
-        else if( inOutMassSATBuffer[i] < Mass1 )
+        else if( mass < Mass1 )
         {
-            renderTexture[xy] = lerp( half4(0,0,1,1), half4(0,1,0,1), (inOutMassSATBuffer[i]-Mass0) / (Mass1-Mass0) );
+            renderTexture[xy] = lerp( half4(0,0,1,1), half4(0,1,0,1), (mass-Mass0) / (Mass1-Mass0) );
         }
-        else if( inOutMassSATBuffer[i] < Mass2 )
+        else if( mass < Mass2 )
         {
-            renderTexture[xy] = lerp( half4(0,1,0,1), half4(1,1,0,1), (inOutMassSATBuffer[i]-Mass1) / (Mass2-Mass1) );
+            renderTexture[xy] = lerp( half4(0,1,0,1), half4(1,1,0,1), (mass-Mass1) / (Mass2-Mass1) );
         }
-        else if( inOutMassSATBuffer[i] < Mass3 )
+        else if( mass < Mass3 )
         {
-            renderTexture[xy] = lerp( half4(1,1,0,1), half4(1,0,0,1), (inOutMassSATBuffer[i]-Mass2) / (Mass3-Mass2) );
+            renderTexture[xy] = lerp( half4(1,1,0,1), half4(1,0,0,1), (mass-Mass2) / (Mass3-Mass2) );
         }
         else
         {
-            renderTexture[xy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (inOutMassSATBuffer[i]-Mass3) / (Mass4-Mass3) );
+            renderTexture[xy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (mass-Mass3) / (Mass4-Mass3) );
         }
     }
 }

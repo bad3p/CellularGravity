@@ -54,7 +54,10 @@ public partial class CellularGravity : MonoBehaviour
             int y = i / _width;
             int x = i - y * _width;
 
-            _cells[i].vel = Vector2.zero;
+            _cells[i].vel = new Vector2(_width / 2 * CellSize + CellSize / 2, _height / 2 * CellSize + CellSize / 2) -
+                            new Vector2(x * CellSize + CellSize / 2, y * CellSize + CellSize / 2);
+            _cells[i].vel = new Vector2( _cells[i].vel.y, -_cells[i].vel.x );
+            _cells[i].vel.Normalize();
             _cells[i].mass = InitialMassMultiplier * massPixels[i].r;
         }
 
@@ -69,6 +72,7 @@ public partial class CellularGravity : MonoBehaviour
         
         _computeShader.SetInt("width", _width);
         _computeShader.SetInt("height", _height);
+        _computeShader.SetFloat("cellSize", CellSize);
         
         _computeShader.SetBuffer(_initMassSAT, "inCellBuffer", _inCellBuffer);
         _computeShader.SetBuffer(_initMassSAT, "outMassSATBuffer", _outMassSATBuffer);
@@ -94,6 +98,43 @@ public partial class CellularGravity : MonoBehaviour
         _computeShader.SetBuffer(_transposeMassSAT, "outMassSATBuffer", _outMassSATBuffer);
         _computeShader.Dispatch(_transposeMassSAT, numberOfInitMassSATGroups, 1, 1);
         Swap(ref _outMassSATBuffer, ref _inMassSATBuffer);
+
+        /*
+        Vector4[] sat = new Vector4[_width * _height];
+        _inMassSATBuffer.GetData( sat );
+        
+        const int TestCount = 1;
+        for (int test = 0; test < TestCount; test++)
+        {
+            int xMin = Random.Range(0, _width / 2);
+            int yMin = Random.Range(0, _height / 2);
+            int xMax = xMin + Random.Range(1, _width / 2 - 1);
+            int yMax = yMin + Random.Range(1, _height / 2 - 1);
+            
+            //xMin = 7;
+            //yMin = 7;
+            //xMax = 10;
+            //yMax = 10;
+
+            Vector4 satMaxMax = sat[yMax * _width + xMax];
+            Vector4 satMaxMin = sat[yMax * _width + xMin];
+            Vector4 satMinMax = sat[yMin * _width + xMax];
+            Vector4 satMinMin = sat[yMin * _width + xMin];
+            
+            Vector4 satSample = satMaxMax - satMaxMin - satMinMax + satMinMin;
+            
+            int divisor = (xMax - xMin) * (yMax - yMin);
+            Vector2 pos = new Vector2(satSample.z,satSample.w);
+            float weight = satSample.y;
+            Vector2 weightedPos = pos / weight;
+			
+            Vector2 pInf = new Vector2( (xMin+1) * CellSize + CellSize / 2, (yMin+1) * CellSize + CellSize / 2 );
+            Vector2 pSup = new Vector2( xMax * CellSize + CellSize / 2, yMax * CellSize + CellSize / 2 );
+            Vector2 precise = pInf + (pSup - pInf) / 2;
+			
+            Debug.Log( "[" + (xMin+1) + "," + (yMin+1) + "," + xMax + "," + yMax + "] sat: " + satSample + " precise: " + precise + " weighted: " + weightedPos );
+        }
+        */
     }
 
     private void SimulateGPU()

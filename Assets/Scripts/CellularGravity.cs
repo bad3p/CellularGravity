@@ -34,7 +34,6 @@ public partial class CellularGravity : MonoBehaviour
 	public float MaxCellOffset = 0.1f;
 	public float MaxDeltaTime = 1.0f;
 	public DisplayMode DisplayMode = DisplayMode.Masses;
-	public bool UseSAT = true;
 	[Header("Seed")]
 	public Texture2D MassTexture;
 	public Gradient MassGradient;
@@ -146,8 +145,8 @@ public partial class CellularGravity : MonoBehaviour
 
 		_inCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );			
 		_outCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );
-		_inMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
-		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) );
+		_inMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) * 4 );
+		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) * 4 );
 		_outRowStatsBuffer = new ComputeBuffer( _rowStats.Length, RowStats.SizeOf );
 		_inOutCellRectBuffer = new ComputeBuffer(_cells.Length, sizeof(float) * 4);
 		_inOutMassPropagationBuffer = new ComputeBuffer(_cells.Length, MassPropagation.SizeOf);
@@ -160,6 +159,67 @@ public partial class CellularGravity : MonoBehaviour
 	private void Start()
 	{
 		var sizeDelta = _image.rectTransform.sizeDelta;
+		/*
+		const int TestWidth = 32;
+		const int TestHeight = 32;
+		Vector2[] image = new Vector2[TestWidth * TestHeight];
+		for (int y = 0; y < TestHeight; y++)
+		{
+			for (int x = 0; x < TestWidth; x++)
+			{
+				int index = y * TestWidth + x;
+				image[index] = new Vector2(x, y);
+			}
+		}
+		
+		Vector2[] sat = new Vector2[TestWidth * TestHeight];
+		for (int y = 0; y < TestHeight; y++)
+		{
+			int index = y*TestWidth;
+			Vector2 acc = image[index]; 
+			sat[index] = acc;        
+			index++;
+			
+			for( int x=1; x<TestWidth; x++, index++)
+			{
+				acc += image[index];
+				sat[index] = acc;
+			}
+		}
+		for (int x = 0; x < TestWidth; x++)
+		{
+			int index = x;
+			Vector2 acc = sat[index]; 
+			sat[index] = acc;        
+			index += TestWidth;
+			
+			for( int y=1; y<TestHeight; y++, index += TestWidth)
+			{
+				acc += sat[index];
+				sat[index] = acc;
+			}
+		}
+
+		const int TestCount = 16;
+		for (int test = 0; test < TestCount; test++)
+		{
+			int xMin = Random.Range(0, TestWidth / 2);
+			int yMin = Random.Range(0, TestHeight / 2);
+			int xMax = xMin + Random.Range(1, TestWidth / 2 - 1);
+			int yMax = yMin + Random.Range(1, TestHeight / 2 - 1);
+
+			Vector2 satSample = sat[yMax * TestWidth + xMax] -
+			                    sat[yMax * TestWidth + xMin] -
+			                    sat[yMin * TestWidth + xMax] +
+			                    sat[yMin * TestWidth + xMin];
+
+			int divisor = (xMax - xMin) * (yMax - yMin);
+			satSample /= divisor;
+			
+			Vector2 precise = new Vector2( (xMin+1) + (float)(xMax-xMin-1)/2, (yMin+1) + (float)(yMax-yMin-1)/2 );
+			
+			Debug.Log( "[" + (xMin+1) + "," + (yMin+1) + "," + xMax + "," + yMax + "] sat: " + satSample + " precise: " + precise );
+		}*/
 	}
 
 	void OnDestroy()
