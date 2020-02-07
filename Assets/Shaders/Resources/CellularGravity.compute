@@ -752,32 +752,45 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
         int x = i - y * width;        
         
         int2 xy = int2( x,y );
+                
+        const float Mass0 = 0.0001;
+        const float Mass1 = 0.001;
+        const float Mass2 = 0.01;
+        const float Mass3 = 0.1;
+        const float Mass4 = 1;
+        const float Mass5 = 10;
         
-        const float Mass0 = 0.001;
-        const float Mass1 = 0.01;
-        const float Mass2 = 0.1;
-        const float Mass3 = 1;
-        const float Mass4 = 10;
+        const half4 VacuumColor = half4( 0,0,0,0 );
+        const half4 Color0 = half4( 0.525, 0, 0.525, 1 );
+        const half4 Color1 = half4( 0,0,1,1 );
+        const half4 Color2 = half4( 0,1,0,1 );
+        const half4 Color3 = half4( 1,1,0,1 );
+        const half4 Color4 = half4( 1,0,0,1 );
+        const half4 Color5 = half4( 1,1,1,1 );
         
         if( inOutCellBuffer[i].mass < Mass0 )
         {
-            renderTexture[xy] = lerp( half4(0,0,0,1), half4(0,0,1,1), inOutCellBuffer[i].mass / Mass0 );   
+            renderTexture[xy] = lerp( VacuumColor, Color0, inOutCellBuffer[i].mass / Mass0 );   
         } 
         else if( inOutCellBuffer[i].mass < Mass1 )
         {
-            renderTexture[xy] = lerp( half4(0,0,1,1), half4(0,1,0,1), (inOutCellBuffer[i].mass-Mass0) / (Mass1-Mass0) );
+            renderTexture[xy] = lerp( Color0, Color1, (inOutCellBuffer[i].mass-Mass0) / (Mass1-Mass0) );
         }
         else if( inOutCellBuffer[i].mass < Mass2 )
         {
-            renderTexture[xy] = lerp( half4(0,1,0,1), half4(1,1,0,1), (inOutCellBuffer[i].mass-Mass1) / (Mass2-Mass1) );
+            renderTexture[xy] = lerp( Color1, Color2, (inOutCellBuffer[i].mass-Mass1) / (Mass2-Mass1) );
         }
         else if( inOutCellBuffer[i].mass < Mass3 )
         {
-            renderTexture[xy] = lerp( half4(1,1,0,1), half4(1,0,0,1), (inOutCellBuffer[i].mass-Mass2) / (Mass3-Mass2) );
+            renderTexture[xy] = lerp( Color2, Color3, (inOutCellBuffer[i].mass-Mass2) / (Mass3-Mass2) );
+        }
+        else if( inOutCellBuffer[i].mass < Mass4 )
+        {
+            renderTexture[xy] = lerp( Color3, Color4, (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
         }
         else
         {
-            renderTexture[xy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
+            renderTexture[xy] = lerp( Color4, Color5, (inOutCellBuffer[i].mass-Mass4) / (Mass5-Mass4) );
         }
     }
 }

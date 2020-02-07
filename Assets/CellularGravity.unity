@@ -693,7 +693,7 @@ MonoBehaviour:
   CellSize: 100
   Gravity: 9.8
   Density: 1000
-  MaxCellOffset: 0.999
+  MaxCellOffset: 1
   MaxDeltaTime: 10
   DisplayMode: 0
   UseSAT: 1
