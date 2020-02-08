@@ -145,8 +145,8 @@ public partial class CellularGravity : MonoBehaviour
 
 		_inCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );			
 		_outCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );
-		_inMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) * 4 );
-		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) * 4 );
+		_inMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) * 3 );
+		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) * 3 );
 		_outRowStatsBuffer = new ComputeBuffer( _rowStats.Length, RowStats.SizeOf );
 		_inOutCellRectBuffer = new ComputeBuffer(_cells.Length, sizeof(float) * 4);
 		_inOutMassPropagationBuffer = new ComputeBuffer(_cells.Length, MassPropagation.SizeOf);
