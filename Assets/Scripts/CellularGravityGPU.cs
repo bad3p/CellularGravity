@@ -179,10 +179,13 @@ public partial class CellularGravity : MonoBehaviour
         if (deltaTime > MaxDeltaTime) deltaTime = MaxDeltaTime;
         DeltaTime.text = deltaTime.ToString("F5");
         TotalMass.text = totalMass.ToString("F5");
-
+        
         _computeShader.SetFloat("deltaTime", deltaTime);
+
+        /*        
         _computeShader.SetBuffer(_integrateVelocity, "inOutCellBuffer", _inCellBuffer);
         _computeShader.Dispatch(_integrateVelocity, numberOfCellGroups, 1, 1);
+        */
         
         // momentum transfer with local expansion
         

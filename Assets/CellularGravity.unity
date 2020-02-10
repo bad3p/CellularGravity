@@ -688,15 +688,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   DeltaTime: {fileID: 2098226924}
   TotalMass: {fileID: 1414797702}
-  Resolution: 2
+  Resolution: 1
   InitialMassMultiplier: 0.5
   CellSize: 100
-  Gravity: 3.2
-  Density: 50
+  Gravity: 9
+  Density: 2500
   MaxCellOffset: 1
-  MaxDeltaTime: 1
+  MaxDeltaTime: 5
   DisplayMode: 0
-  MassTexture: {fileID: 2800000, guid: fd1a0c09bd25f4c4f99ec1b685b6b127, type: 3}
+  MassTexture: {fileID: 10300, guid: 0000000000000000f000000000000000, type: 0}
   MassGradient:
     serializedVersion: 2
     key0: {r: 1, g: 1, b: 1, a: 1}

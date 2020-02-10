@@ -328,6 +328,12 @@ void CleanupMassPropagationBuffer(uint3 id : SV_DispatchThreadID)
 
 #pragma kernel MassPropagationPrepass
 
+float4 EvaluateRK4(float4 initial, float dt, float4 d, float2 acceleration)
+{
+    float4 state = initial + d * dt;    
+    return float4( state.zw, acceleration );
+}
+
 [numthreads(GROUPSIZE,1,1)]
 void MassPropagationPrepass(uint3 id : SV_DispatchThreadID)
 {
@@ -341,7 +347,24 @@ void MassPropagationPrepass(uint3 id : SV_DispatchThreadID)
         float cellExtents = float2( cellSize, cellSize );
         float cellHalfExtents = cellExtents / 2;
         
-        float2 cellOffset = inCellBuffer[i].vel * deltaTime; 
+        //float2 cellOffset = inCellBuffer[i].vel * deltaTime;
+        float2 cellOffset = 0;
+        if( inCellBuffer[i].mass > EPSILON )
+        {
+            float2 acceleration = inCellBuffer[i].force / inCellBuffer[i].mass; 
+            float4 state = float4( float2(0,0), inCellBuffer[i].vel );           
+            float4 a = EvaluateRK4( state, 0.0, float4( 0,0,0,0 ), acceleration );
+            float4 b = EvaluateRK4( state, deltaTime*0.5f, a, acceleration );
+            float4 c = EvaluateRK4( state, deltaTime*0.5f, b, acceleration );
+            float4 d = EvaluateRK4( state, deltaTime, c, acceleration );
+            
+            float2 dPosDt = 1.0f / 6.0f * ( a.xy + 2.0f * ( b.xy + c.xy ) + d.xy );
+            float2 dVelDt = 1.0f / 6.0f * ( a.zw + 2.0f * ( b.zw + c.zw ) + d.zw );
+            
+            cellOffset = dPosDt * deltaTime;
+            inCellBuffer[i].vel += dVelDt * deltaTime;
+        }         
+         
         float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents + cellOffset;
         float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
         
