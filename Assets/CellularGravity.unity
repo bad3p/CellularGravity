@@ -689,7 +689,7 @@ MonoBehaviour:
   DeltaTime: {fileID: 2098226924}
   TotalMass: {fileID: 1414797702}
   Resolution: 3
-  InitialMassMultiplier: 1
+  InitialMassMultiplier: 0.25
   CellSize: 100
   Gravity: 9
   Density: 1250

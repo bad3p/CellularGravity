@@ -743,13 +743,13 @@ void DrawMassSAT(uint3 id : SV_DispatchThreadID)
         
         int2 xy = int2( x,y );
         
-        const float Mass0 = 0.01;
-        const float Mass1 = 0.1;
-        const float Mass2 = 1;
-        const float Mass3 = 10;
-        const float Mass4 = 100;
-        const float Mass5 = 1000;
-        const float Mass6 = 10000;
+        const float Mass0 = 0.1;
+        const float Mass1 = 1.0;
+        const float Mass2 = 10;
+        const float Mass3 = 100;
+        const float Mass4 = 1000;
+        const float Mass5 = 10000;
+        const float Mass6 = 100000;
         
         const half4 VacuumColor = half4( 0,0,0,0 );
         const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
@@ -890,7 +890,6 @@ void DrawMomentums(uint3 id : SV_DispatchThreadID)
         const float Mass1 = 0.001f;
         const float Mul1 = 1.0f;
         float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
-        factor *= factor;
         
         value *= factor;      
        
@@ -937,7 +936,6 @@ void DrawForces(uint3 id : SV_DispatchThreadID)
         const float Mass1 = 0.001f;
         const float Mul1 = 1.0f;
         float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
-        //force *= lerp( Mul0, Mul1, factor );
         value *= factor;
        
         //renderTexture[xy] = half4( force, 0, 1 );           
