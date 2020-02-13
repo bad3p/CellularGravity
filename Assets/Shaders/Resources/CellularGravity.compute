@@ -1,8 +1,6 @@
 ﻿
 #define GROUPSIZE 128
 
-#define MAX_MASS_PROPAGATION_INDICES 9
-
 #define EPSILON 5.96e-08
 
 //////////////////////////////////////////////////////////////////////////////////////
@@ -21,12 +19,6 @@ struct RowStats
     float totalMass;
 };
 
-struct MassPropagation
-{
-	int count;
-	int indices[MAX_MASS_PROPAGATION_INDICES];	
-};
-
 RWStructuredBuffer<Cell> inCellBuffer;
 RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
@@ -35,7 +27,7 @@ RWStructuredBuffer<float3> inMassSATBuffer;
 RWStructuredBuffer<float3> outMassSATBuffer;
 RWStructuredBuffer<float3> inOutMassSATBuffer;
 RWStructuredBuffer<float4> inOutCellRectBuffer;
-RWStructuredBuffer<MassPropagation> inOutMassPropagationBuffer;
+RWStructuredBuffer<int> inOutMassPropagationBuffer;
 RWTexture2D<half4> renderTexture; 
 
 float gravity;
@@ -45,6 +37,7 @@ float deltaTime;
 float density;
 int width;
 int height;
+int numMassPropagationIndices;
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -315,12 +308,13 @@ void CleanupMassPropagationBuffer(uint3 id : SV_DispatchThreadID)
     int i = int(id.x);  
     
     if( i < width*height )
-    {    
-        inOutMassPropagationBuffer[i].count = 0;
-        for( int j=0; j<MAX_MASS_PROPAGATION_INDICES; j++ )
+    {   
+        int stride = numMassPropagationIndices+1;
+        int offset = i * stride;         
+        for( int j = 0; j<stride; j++ )
         {
-            inOutMassPropagationBuffer[i].indices[j] = 0;
-        }        
+            inOutMassPropagationBuffer[offset+j] = 0;
+        }     
     }
 }
 
@@ -377,17 +371,22 @@ void MassPropagationPrepass(uint3 id : SV_DispatchThreadID)
         int2 xyInf = floor( cellRect.xy / cellSize );
         int2 xySup = floor( cellRect.zw / cellSize );
         
+        int massPropagationStride = numMassPropagationIndices + 1;        
+        
         for (int y1 = xyInf.y; y1 <= xySup.y; y1++)
         {
             for (int x1 = xyInf.x; x1 <= xySup.x; x1++)
             {
                 int j = y1 * width + x1;
                 
+                int massPropagationOffset = j * massPropagationStride;
+                
                 int writeIndex;
-                InterlockedAdd( inOutMassPropagationBuffer[j].count, 1, writeIndex );
-                if( writeIndex < MAX_MASS_PROPAGATION_INDICES )
+                InterlockedAdd( inOutMassPropagationBuffer[massPropagationOffset], 1, writeIndex );
+                
+                if( writeIndex < numMassPropagationIndices )
                 {
-                    inOutMassPropagationBuffer[j].indices[writeIndex] = i;
+                    inOutMassPropagationBuffer[massPropagationOffset+writeIndex+1] = i;
                 }
             }
         }                   
@@ -442,10 +441,13 @@ void MassPropagationPass(uint3 id : SV_DispatchThreadID)
         float cellMass = 0;
         float2 cellMassVel = float2( 0, 0 ); 
         
-        int count = min( inOutMassPropagationBuffer[i].count, MAX_MASS_PROPAGATION_INDICES );
+        int massPropagationStride = numMassPropagationIndices + 1;
+        int massPropagationOffset = i * massPropagationStride;
+        
+        int count = min( inOutMassPropagationBuffer[massPropagationOffset], numMassPropagationIndices );
         for (int j = 0; j <= count; j++)
         {
-            int k = inOutMassPropagationBuffer[i].indices[j];            
+            int k = inOutMassPropagationBuffer[massPropagationOffset+j+1];            
             
             float4 otherCellRect = inOutCellRectBuffer[k];            
             float4 intersectionRect = IntersectRects( cellRect, otherCellRect );

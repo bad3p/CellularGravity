@@ -19,6 +19,17 @@ public enum DisplayMode
 	MassSAT
 };
 
+public enum MassPropagationWindow
+{
+	_3x3, // max offset : 1.0 x cell size
+	_4x4, // max offset : 2.0 x cell size
+	_5x5, // max offset : 2.5 x cell size
+	_6x6, // max offset : 3.0 x cell size
+	_7x7, // max offset : 3.5 x cell size
+	_8x8, // max offset : 4.0 x cell size
+	_9x9  // mas offset : 4.5 x cell size
+};
+
 [RequireComponent(typeof(Image))]
 public partial class CellularGravity : MonoBehaviour
 {
@@ -31,6 +42,7 @@ public partial class CellularGravity : MonoBehaviour
 	public float CellSize = 1.0f;
 	public float Gravity = 9.8f;
 	public float Density = 1.0f;
+	public MassPropagationWindow MaxMassPropagationWindow = MassPropagationWindow._3x3; 
 	public float MaxCellOffset = 0.1f;
 	public float MaxDeltaTime = 1.0f;
 	public DisplayMode DisplayMode = DisplayMode.Masses;
@@ -56,22 +68,6 @@ public partial class CellularGravity : MonoBehaviour
 		
 		public const int SizeOf = 12; // ComputeShader stride
 	};
-	
-	public struct MassPropagation
-	{
-		public int count;
-		public int i0;
-		public int i1;
-		public int i2;
-		public int i3;
-		public int i4;
-		public int i5;
-		public int i6;
-		public int i7;
-		public int i8;
-
-		public const int SizeOf = 4*10; // ComputeShader stride
-	};
 
 	private int _width;
 	private int _height;
@@ -79,7 +75,7 @@ public partial class CellularGravity : MonoBehaviour
 	private Material _gridMaterial;
 	private Cell[] _cells = new Cell[0];
 	private RowStats[] _rowStats = new RowStats[0];
-	private MassPropagation[] _massPropagations = new MassPropagation[0];
+	private int[] _massPropagations = new int[0];
 	private ComputeBuffer _inCellBuffer = null;
 	private ComputeBuffer _outCellBuffer = null;
 	private ComputeBuffer _inMassSATBuffer = null;
@@ -89,6 +85,29 @@ public partial class CellularGravity : MonoBehaviour
 	private ComputeBuffer _inOutMassPropagationBuffer = null;
 	private ComputeShader _computeShader = null;
 	private RenderTexture _gridRenderTexture = null;
+
+	private int NumMassPropagationIndices
+	{
+		get
+		{
+			switch (MaxMassPropagationWindow)
+			{
+				case MassPropagationWindow._3x3: return 9;
+				case MassPropagationWindow._4x4: return 16;
+				case MassPropagationWindow._5x5: return 25;
+				case MassPropagationWindow._6x6: return 36;
+				case MassPropagationWindow._7x7: return 47;
+				case MassPropagationWindow._8x8: return 64;
+				case MassPropagationWindow._9x9: return 81;
+				default: return 4;
+			}
+		}
+	}
+	
+	private int MassPropagationBufferStride
+	{
+		get { return (1 + NumMassPropagationIndices) * 4; }
+	}
 
 	private Texture2D GetReadableTexture(Texture2D src, int width, int height)
 	{
@@ -142,7 +161,7 @@ public partial class CellularGravity : MonoBehaviour
 			
 		_cells = new Cell[_width*_height];
 		_rowStats = new RowStats[_height];
-		_massPropagations = new MassPropagation[_width*_height];
+		_massPropagations = new int[_width*_height];
 
 		_inCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );			
 		_outCellBuffer = new ComputeBuffer( _cells.Length, Cell.SizeOf );
@@ -150,7 +169,7 @@ public partial class CellularGravity : MonoBehaviour
 		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) * 3 );
 		_outRowStatsBuffer = new ComputeBuffer( _rowStats.Length, RowStats.SizeOf );
 		_inOutCellRectBuffer = new ComputeBuffer(_cells.Length, sizeof(float) * 4);
-		_inOutMassPropagationBuffer = new ComputeBuffer(_cells.Length, MassPropagation.SizeOf);
+		_inOutMassPropagationBuffer = new ComputeBuffer(_cells.Length, MassPropagationBufferStride);
 		_computeShader = Resources.Load<ComputeShader>( "CellularGravity" );
 
 		FindKernels( _computeShader );
@@ -160,67 +179,6 @@ public partial class CellularGravity : MonoBehaviour
 	private void Start()
 	{
 		var sizeDelta = _image.rectTransform.sizeDelta;
-		/*
-		const int TestWidth = 32;
-		const int TestHeight = 32;
-		Vector2[] image = new Vector2[TestWidth * TestHeight];
-		for (int y = 0; y < TestHeight; y++)
-		{
-			for (int x = 0; x < TestWidth; x++)
-			{
-				int index = y * TestWidth + x;
-				image[index] = new Vector2(x, y);
-			}
-		}
-		
-		Vector2[] sat = new Vector2[TestWidth * TestHeight];
-		for (int y = 0; y < TestHeight; y++)
-		{
-			int index = y*TestWidth;
-			Vector2 acc = image[index]; 
-			sat[index] = acc;        
-			index++;
-			
-			for( int x=1; x<TestWidth; x++, index++)
-			{
-				acc += image[index];
-				sat[index] = acc;
-			}
-		}
-		for (int x = 0; x < TestWidth; x++)
-		{
-			int index = x;
-			Vector2 acc = sat[index]; 
-			sat[index] = acc;        
-			index += TestWidth;
-			
-			for( int y=1; y<TestHeight; y++, index += TestWidth)
-			{
-				acc += sat[index];
-				sat[index] = acc;
-			}
-		}
-
-		const int TestCount = 16;
-		for (int test = 0; test < TestCount; test++)
-		{
-			int xMin = Random.Range(0, TestWidth / 2);
-			int yMin = Random.Range(0, TestHeight / 2);
-			int xMax = xMin + Random.Range(1, TestWidth / 2 - 1);
-			int yMax = yMin + Random.Range(1, TestHeight / 2 - 1);
-
-			Vector2 satSample = sat[yMax * TestWidth + xMax] -
-			                    sat[yMax * TestWidth + xMin] -
-			                    sat[yMin * TestWidth + xMax] +
-			                    sat[yMin * TestWidth + xMin];
-
-			int divisor = (xMax - xMin) * (yMax - yMin);
-			satSample /= divisor;
-			
-			Vector2 precise = new Vector2( (xMin+1) + (float)(xMax-xMin-1)/2, (yMin+1) + (float)(yMax-yMin-1)/2 );
-			
-			Debug.Log( "[" + (xMin+1) + "," + (yMin+1) + "," + xMax + "," + yMax + "] sat: " + satSample + " precise: " + precise );
-		}*/
 	}
 
 	void OnDestroy()

@@ -189,6 +189,7 @@ public partial class CellularGravity : MonoBehaviour
         
         // momentum transfer with local expansion
         
+        _computeShader.SetInt( "numMassPropagationIndices", NumMassPropagationIndices );
         _computeShader.SetBuffer(_cleanupMassPropagationBuffer, "inOutMassPropagationBuffer", _inOutMassPropagationBuffer);
         _computeShader.Dispatch(_cleanupMassPropagationBuffer, numberOfCellGroups, 1, 1);
         
