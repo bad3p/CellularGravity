@@ -56,12 +56,12 @@ public partial class CellularGravity : MonoBehaviour
 
             Vector2 c = new Vector2(_width / 2 * CellSize + CellSize / 2, _height / 2 * CellSize + CellSize / 2);
             Vector2 p = new Vector2(x * CellSize + CellSize / 2, y * CellSize + CellSize / 2);
-            _cells[i].vel = (c - p).normalized * (_width / 81.0f) * Random.Range(0.825f,1.125f);
+            _cells[i].vel = (c - p).normalized * (_width / 81.0f) * Random.Range(InitialVelocityBias.x,InitialVelocityBias.y);
             _cells[i].vel = new Vector2( _cells[i].vel.y, -_cells[i].vel.x );
             _cells[i].vel += Vector2.Lerp( Vector2.zero, (c-p).normalized, Vector2.Distance(c,p) / (_width / 2 * CellSize) );
             _cells[i].vel = Vector2.Lerp(Vector2.zero, _cells[i].vel, Vector2.Distance(c, p) / (_width / 2 * CellSize));
             
-            _cells[i].mass = InitialMassMultiplier * massPixels[i].r;
+            _cells[i].mass = InitialMassMultiplier * massPixels[i].r * Random.Range(InitialMassBias.x,InitialMassBias.y);
         }
 
         _inCellBuffer.SetData(_cells);

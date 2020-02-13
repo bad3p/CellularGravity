@@ -36,7 +36,8 @@ public partial class CellularGravity : MonoBehaviour
 	public DisplayMode DisplayMode = DisplayMode.Masses;
 	[Header("Seed")]
 	public Texture2D MassTexture;
-	public Gradient MassGradient;
+	public Vector2 InitialVelocityBias = new Vector2(0.825f,1.125f);
+	public Vector2 InitialMassBias = new Vector2(0.75f, 1.25f);
 	
 	public struct Cell
 	{
