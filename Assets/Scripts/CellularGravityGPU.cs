@@ -11,9 +11,6 @@ public partial class CellularGravity : MonoBehaviour
     const int GPUGroupSize = 128;
 
     private int _computeGravityForceWithSAT;
-    private int _integrateVelocity;
-    private int _momentumTransfer;
-    private int _localExpansion;
     private int _initMassSAT;
     private int _transposeMassSAT;
     private int _computeMassSAT;
@@ -25,9 +22,6 @@ public partial class CellularGravity : MonoBehaviour
     private void FindKernels(ComputeShader computeShader)
     {
         _computeGravityForceWithSAT = computeShader.FindKernel("ComputeGravityForceWithSAT");
-        _integrateVelocity = computeShader.FindKernel("IntegrateVelocity");
-        _momentumTransfer = computeShader.FindKernel("MomentumTransfer");
-        _localExpansion = computeShader.FindKernel("LocalExpansion");
         _initMassSAT = computeShader.FindKernel("InitMassSAT");
         _transposeMassSAT = computeShader.FindKernel("TransposeMassSAT");
         _computeMassSAT = computeShader.FindKernel("ComputeMassSAT");
@@ -181,11 +175,6 @@ public partial class CellularGravity : MonoBehaviour
         TotalMass.text = totalMass.ToString("F5");
         
         _computeShader.SetFloat("deltaTime", deltaTime);
-
-        /*        
-        _computeShader.SetBuffer(_integrateVelocity, "inOutCellBuffer", _inCellBuffer);
-        _computeShader.Dispatch(_integrateVelocity, numberOfCellGroups, 1, 1);
-        */
         
         // momentum transfer with local expansion
         
@@ -205,21 +194,6 @@ public partial class CellularGravity : MonoBehaviour
         _computeShader.Dispatch(_massPropagationPass, numberOfCellGroups, 1, 1);
 
         Swap(ref _inCellBuffer, ref _outCellBuffer);
-
-        // momentum transfer with separate local expansion pass
-        /*
-        _computeShader.SetBuffer(_momentumTransfer, "inCellBuffer", _inCellBuffer);
-        _computeShader.SetBuffer(_momentumTransfer, "outCellBuffer", _outCellBuffer);
-        _computeShader.Dispatch(_momentumTransfer, numberOfCellGroups, 1, 1);
-
-        Swap(ref _inCellBuffer, ref _outCellBuffer);
-
-        _computeShader.SetBuffer(_localExpansion, "inCellBuffer", _inCellBuffer);
-        _computeShader.SetBuffer(_localExpansion, "outCellBuffer", _outCellBuffer);
-        _computeShader.Dispatch(_localExpansion, numberOfCellGroups, 1, 1);
-
-        Swap(ref _inCellBuffer, ref _outCellBuffer);
-        */
     }
 }
 

@@ -28,6 +28,7 @@ RWStructuredBuffer<float3> outMassSATBuffer;
 RWStructuredBuffer<float3> inOutMassSATBuffer;
 RWStructuredBuffer<float4> inOutCellRectBuffer;
 RWStructuredBuffer<int> inOutMassPropagationBuffer;
+RWStructuredBuffer<float> filterWeights;
 RWTexture2D<half4> renderTexture; 
 
 float gravity;
@@ -38,6 +39,7 @@ float density;
 int width;
 int height;
 int numMassPropagationIndices;
+
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -278,28 +280,6 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel IntegrateVelocity
-
-[numthreads(GROUPSIZE,1,1)]
-void IntegrateVelocity(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);  
-    
-    if( i < width*height )
-    {    
-        if (inOutCellBuffer[i].mass > EPSILON)
-        {
-            inOutCellBuffer[i].vel += inOutCellBuffer[i].force / inOutCellBuffer[i].mass * deltaTime; 
-        }
-        else
-        {
-            inOutCellBuffer[i].vel = float2( 0, 0 ); 
-        }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
 #pragma kernel CleanupMassPropagationBuffer
 
 [numthreads(GROUPSIZE,1,1)]
@@ -474,161 +454,6 @@ void MassPropagationPass(uint3 id : SV_DispatchThreadID)
             outCellBuffer[i].vel = float2( 0, 0 );
         }
         outCellBuffer[i].force = inCellBuffer[i].force; 
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel MomentumTransfer
-
-[numthreads(GROUPSIZE,1,1)]
-void MomentumTransfer(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);
-    
-    int length0 = width*height; 
-        
-    if( i < length0 )
-    {        
-        float cellArea = cellSize * cellSize;
-        
-        int y0 = i / width;
-        int x0 = i - y0 * width;
- 
-        outCellBuffer[i].force = inCellBuffer[i].force;
-
-        float2 iPos = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );
-        float2 iOffset = inCellBuffer[i].vel * deltaTime;
-        float offsetAreaRatio = CellOffsetArea( iPos, iOffset) / cellArea;
-        outCellBuffer[i].mass = inCellBuffer[i].mass - inCellBuffer[i].mass * offsetAreaRatio;
-        
-        if (outCellBuffer[i].mass < EPSILON)
-        {
-            outCellBuffer[i].mass = 0;
-        }
-                    
-        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;      
-
-        for (int dy0 = -1; dy0 <= 1; dy0++)
-        {
-            for (int dx0 = -1; dx0 <= 1; dx0++)
-            {
-                if (!(dy0 == 0 && dx0 == 0))
-                {
-                    int y1 = y0 + dy0;
-                    int x1 = x0 + dx0;
-                    
-                    if (x1 >= 0 && x1 < width && y1 >= 0 && y1 < height)
-                    {
-                        int j = y1 * width + x1;
-
-                        float2 jPos = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );                    
-                        float2 jOffset = inCellBuffer[j].vel * deltaTime;
-                        float overlappingArea = CellOverlappingArea( iPos, jPos + jOffset, cellSize);
-                        if (overlappingArea > EPSILON)
-                        {
-                            float overlappingAreaRatio = overlappingArea / cellArea;                             
-                            float dm = inCellBuffer[j].mass * overlappingAreaRatio;                            
-                            outCellBuffer[i].mass += dm;
-                            outCellBuffer[i].vel += inCellBuffer[j].vel * dm;                                
-                        }                        
-                    }
-                }
-            }
-        }
-            
-        if (outCellBuffer[i].mass > EPSILON )
-        {
-            outCellBuffer[i].vel = outCellBuffer[i].vel / outCellBuffer[i].mass;              
-        }
-        else
-        {
-            outCellBuffer[i].vel = float2( 0, 0 );
-        }
-    }
-    else
-    {
-        outCellBuffer[i].force = inCellBuffer[i].force;
-        outCellBuffer[i].mass = inCellBuffer[i].mass;
-        outCellBuffer[i].vel = inCellBuffer[i].vel;
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel LocalExpansion
-
-[numthreads(GROUPSIZE,1,1)]
-void LocalExpansion(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);
-    
-    int length0 = width*height; 
-        
-    if( i < length0 )
-    {
-        float cellArea = cellSize * cellSize;
-        
-        int y0 = i / width;
-        int x0 = i - y0 * width;
-        
-        float expansionVel = inCellBuffer[i].mass * density / cellArea;         
-        float expandedCellSize = cellSize + expansionVel * deltaTime;
-        float expandedCellArea = expandedCellSize * expandedCellSize;
-        
-        outCellBuffer[i].mass = inCellBuffer[i].mass * cellArea / expandedCellArea;
-        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;
-        
-        float2 iPos = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );  
-        
-        for (int dy0 = -1; dy0 <= 1; dy0++)
-        {
-            for (int dx0 = -1; dx0 <= 1; dx0++) 
-            {
-                if (!(dy0 == 0 && dx0 == 0))
-                {
-                    int y1 = y0 + dy0;
-                    int x1 = x0 + dx0;
-                    
-                    if (x1 >= 0 && x1 < width && y1 >= 0 && y1 < height)
-                    {
-                        int j = y1 * width + x1;
-                        
-                        expansionVel = inCellBuffer[j].mass * density / cellArea;         
-                        expandedCellSize = cellSize + expansionVel * deltaTime;
-                        expandedCellArea = expandedCellSize * expandedCellSize;
-
-                        float2 jPos = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );                        
-                        float overlappingArea = CellOverlappingArea( iPos, jPos, cellSize, expandedCellSize);
-                        if( overlappingArea > EPSILON )
-                        {
-                            float overlappingAreaRatio = overlappingArea / expandedCellArea;
-                            float dm = inCellBuffer[j].mass * overlappingAreaRatio;
-                            outCellBuffer[i].mass += dm;
-                            float2 expVel = outCellBuffer[j].vel;// + normalize( iPos - jPos ) * expansionVel;
-                            outCellBuffer[i].vel += expVel * dm;     
-                        }
-                    }
-                }
-            }
-        }
-        
-        if (outCellBuffer[i].mass > EPSILON )
-        {
-            outCellBuffer[i].vel = outCellBuffer[i].vel / outCellBuffer[i].mass;              
-        }
-        else
-        {
-            outCellBuffer[i].vel = float2( 0, 0 );
-        }
-        outCellBuffer[i].vel = inCellBuffer[i].vel;                  
-        outCellBuffer[i].force = inCellBuffer[i].force;                                    
-    }
-    else
-    {
-        outCellBuffer[i].force = inCellBuffer[i].force;
-        outCellBuffer[i].mass = inCellBuffer[i].mass;
-        outCellBuffer[i].vel = inCellBuffer[i].vel;
     }
 }
 
@@ -946,5 +771,81 @@ void DrawForces(uint3 id : SV_DispatchThreadID)
         // legend        
         const float LegendScale = 0.25f;        
         renderTexture[xy] = DrawLegend( x, y, LegendScale, renderTexture[xy] );
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawSyntheticImage
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawSyntheticImage(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+        
+    if( i < width*height )
+    {        
+        int y = i / width;
+        int x = i - y * width;        
+        
+        int2 xy = int2( x,y );
+                
+        const float Mass0 = 0.0001;
+        const float Mass1 = 0.001;
+        const float Mass2 = 0.01;
+        const float Mass3 = 0.1;
+        const float Mass4 = 1;
+        const float Mass5 = 10;
+        const float Mass6 = 100;
+        const float Mass7 = 1000;
+        const float Mass8 = 10000;
+        
+        const half4 VacuumColor = half4( 0,0,0,0 );
+        const half4 Color0 = half4( 0.10011, 0.10011, 0.10011, 1 );
+        const half4 Color1 = half4( 0.13348, 0.13348, 0.13348, 1 );
+        const half4 Color2 = half4( 0.17798, 0.17798, 0.17798, 1 );
+        const half4 Color3 = half4( 0.23730, 0.23730, 0.23730, 1 );
+        const half4 Color4 = half4( 0.31641, 0.31641, 0.31641, 1 );
+        const half4 Color5 = half4( 0.42188, 0.42188, 0.42188, 1 );
+        const half4 Color6 = half4( 0.5625, 0.5625, 0.5625,1 );
+        const half4 Color7 = half4( 0.75, 0.75, 0.75, 1 );
+        const half4 Color8 = half4( 1,1,1,1 );
+        
+        if( inOutCellBuffer[i].mass < Mass0 )
+        {
+            renderTexture[xy] = lerp( VacuumColor, Color0, inOutCellBuffer[i].mass / Mass0 );   
+        } 
+        else if( inOutCellBuffer[i].mass < Mass1 )
+        {
+            renderTexture[xy] = lerp( Color0, Color1, (inOutCellBuffer[i].mass-Mass0) / (Mass1-Mass0) );
+        }
+        else if( inOutCellBuffer[i].mass < Mass2 )
+        {
+            renderTexture[xy] = lerp( Color1, Color2, (inOutCellBuffer[i].mass-Mass1) / (Mass2-Mass1) );
+        }
+        else if( inOutCellBuffer[i].mass < Mass3 )
+        {
+            renderTexture[xy] = lerp( Color2, Color3, (inOutCellBuffer[i].mass-Mass2) / (Mass3-Mass2) );
+        }
+        else if( inOutCellBuffer[i].mass < Mass4 )
+        {
+            renderTexture[xy] = lerp( Color3, Color4, (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
+        }
+        else if( inOutCellBuffer[i].mass < Mass5 )
+        {
+            renderTexture[xy] = lerp( Color4, Color5, (inOutCellBuffer[i].mass-Mass4) / (Mass5-Mass4) );
+        }
+        else if( inOutCellBuffer[i].mass < Mass6 )
+        {
+            renderTexture[xy] = lerp( Color5, Color6, (inOutCellBuffer[i].mass-Mass5) / (Mass6-Mass5) );
+        }
+        else if( inOutCellBuffer[i].mass < Mass7 )
+        {
+            renderTexture[xy] = lerp( Color6, Color7, (inOutCellBuffer[i].mass-Mass6) / (Mass7-Mass6) );
+        }
+        else 
+        {
+            renderTexture[xy] = lerp( Color7, Color8, (inOutCellBuffer[i].mass-Mass7) / (Mass8-Mass7) );
+        }
     }
 }

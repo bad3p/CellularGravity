@@ -13,10 +13,11 @@ public enum Resolution
 
 public enum DisplayMode
 {
+	Synthetic,
 	Masses,
 	Momentums,
 	Forces,
-	MassSAT
+	MassSAT,
 };
 
 public enum MassPropagationWindow
@@ -45,6 +46,7 @@ public partial class CellularGravity : MonoBehaviour
 	public MassPropagationWindow MaxMassPropagationWindow = MassPropagationWindow._3x3; 
 	public float MaxCellOffset = 0.1f;
 	public float MaxDeltaTime = 1.0f;
+	[Header("Display")]
 	public DisplayMode DisplayMode = DisplayMode.Masses;
 	[Header("Seed")]
 	public Texture2D MassTexture;
@@ -176,11 +178,6 @@ public partial class CellularGravity : MonoBehaviour
 		Initialize( massTexture );
 	}
 
-	private void Start()
-	{
-		var sizeDelta = _image.rectTransform.sizeDelta;
-	}
-
 	void OnDestroy()
 	{
 		_inCellBuffer.Release();			
@@ -190,6 +187,11 @@ public partial class CellularGravity : MonoBehaviour
 		_outRowStatsBuffer.Release();
 		_inOutCellRectBuffer.Release();
 		_inOutMassPropagationBuffer.Release();
+	}
+	
+	public void OnShowSyntheticImage(string arg)
+	{
+		DisplayMode = DisplayMode.Synthetic;
 	}
 
 	public void OnShowMasses(string arg)
@@ -220,11 +222,16 @@ public partial class CellularGravity : MonoBehaviour
 		int drawMomentums = _computeShader.FindKernel( "DrawMomentums" );
 		int drawForces = _computeShader.FindKernel( "DrawForces" );
 		int drawMassSAT = _computeShader.FindKernel( "DrawMassSAT" );
-		
+		int drawSyntheticImage = _computeShader.FindKernel( "DrawSyntheticImage" );
 		int numberOfGroups = Mathf.CeilToInt( (float)(_width*_height) / GPUGroupSize );
 
 		switch (DisplayMode)
 		{
+			case DisplayMode.Synthetic:
+				_computeShader.SetBuffer(drawSyntheticImage, "inOutCellBuffer", _inCellBuffer);
+				_computeShader.SetTexture(drawSyntheticImage, "renderTexture", _gridRenderTexture);
+				_computeShader.Dispatch(drawSyntheticImage, numberOfGroups, 1, 1);
+				break;
 			case DisplayMode.Masses:
 				_computeShader.SetBuffer(drawMasses, "inOutCellBuffer", _inCellBuffer);
 				_computeShader.SetTexture(drawMasses, "renderTexture", _gridRenderTexture);
