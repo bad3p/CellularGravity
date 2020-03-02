@@ -42,57 +42,6 @@ int numMassPropagationIndices;
 
 
 //////////////////////////////////////////////////////////////////////////////////////
-
-float CellOffsetArea(float2 pos, float2 offset)
-{
-    float cellExtents = cellSize / 2;
-
-    float infX = pos.x - cellExtents;
-    float infY = pos.y - cellExtents;
-    float supX = pos.x + cellExtents;
-    float supY = pos.y + cellExtents;
-        
-    return (supX - infX) * abs(offset.y) + (supY - infY) * abs(offset.x) - abs(offset.x * offset.y);
-}
-    
-float CellOverlappingArea(float2 pos0, float2 pos1, float cellSize)
-{
-    float cellExtents = cellSize / 2;
-        
-    float left1 = pos0.x - cellExtents;
-    float right1 = pos0.x + cellExtents;
-    float top1 = pos0.y + cellExtents;
-    float bottom1 = pos0.y - cellExtents;
-		
-    float left2 = pos1.x - cellExtents;
-    float right2 = pos1.x + cellExtents;
-    float top2 = pos1.y + cellExtents;
-    float bottom2 = pos1.y - cellExtents;
-		
-    float xOverlap = max(0, min(right1, right2) - max(left1, left2));
-    float yOverlap = max(0, min(top1, top2) - max(bottom1, bottom2));
-    return xOverlap * yOverlap;
- }
- 
-float CellOverlappingArea(float2 pos0, float2 pos1, float cellSize0, float cellSize1)
-{
-    float cellExtents0 = cellSize0 / 2;
-    float cellExtents1 = cellSize1 / 2;
-        
-    float left1 = pos0.x - cellExtents0;
-    float right1 = pos0.x + cellExtents0;
-    float top1 = pos0.y + cellExtents0;
-    float bottom1 = pos0.y - cellExtents0;
-		
-    float left2 = pos1.x - cellExtents1;
-    float right2 = pos1.x + cellExtents1;
-    float top2 = pos1.y + cellExtents1;
-    float bottom2 = pos1.y - cellExtents1;
-		
-    float xOverlap = max(0, min(right1, right2) - max(left1, left2));
-    float yOverlap = max(0, min(top1, top2) - max(bottom1, bottom2));
-    return xOverlap * yOverlap;
- } 
  
  float2 GravityForce(float2 p0, float m0, float2 p1, float m1)
  {
@@ -101,6 +50,7 @@ float CellOverlappingArea(float2 pos0, float2 pos1, float cellSize0, float cellS
     if (r > EPSILON )
     {
         dir *= 1.0f / r;
+        r = max( r, 1.0 ); // yep!  
         return dir * (m0 * m1 * gravity / ( r * r ));
     }
     else
@@ -194,7 +144,9 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
         float m0 = inOutCellBuffer[i].mass;
 
         float2 force = float2( 0, 0 );
-                        
+    
+        /* this is doubtful, considering mass transit between neighbor cells */
+        /*                    
         for (int dy0 = -1; dy0 <= 1; dy0++)
         {
             for (int dx0 = -1; dx0 <= 1; dx0++)
@@ -215,6 +167,7 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                 }
             }
         }
+        */
                 
         int offset = 3;
         int maxOffset = max(width,height);                
