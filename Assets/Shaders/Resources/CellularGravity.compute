@@ -59,6 +59,31 @@ int numMassPropagationIndices;
     } 
 }
 
+float LogToLinear(float value, float minLog, float maxLog, float minLinear, float linearMultiplicator)
+{
+    if( value < minLog )
+    {
+        return lerp( 0.0, minLinear, value/minLog );
+    }
+    else
+    {
+        float logValue0 = minLog;
+        float logValue1 = minLog * 10;
+        float linearValue0 = minLinear;
+        float linearValue1 = minLinear * linearMultiplicator;
+        
+        while( value > logValue1 && logValue1 * 10 < maxLog )
+        {
+            logValue0 = logValue1;
+            logValue1 *= 10;
+            linearValue0 = linearValue1;
+            linearValue1 *= linearMultiplicator;
+        }
+        
+        return lerp( linearValue0, linearValue1, (value - logValue0)/(logValue1 - logValue0) );
+    }  
+}
+
 float Angle(float2 from, float2 to)
 {
     float fromSqrMag = from.x*from.x + from.y*from.y;
@@ -206,10 +231,10 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                             float2 virtualCellPos = massSATSample.yz;
                             virtualCellPos = virtualCellPos / virtualCellWeight;
                             
-                            /*
-                            float lx = xMin * cellSize + cellSize / 2;
+                            /* 
+                            float lx = (xMin+1) * cellSize + cellSize / 2;
                             float rx = xMax * cellSize + cellSize / 2;
-                            float ty = yMin * cellSize + cellSize / 2;
+                            float ty = (yMin+1) * cellSize + cellSize / 2;
                             float by = yMax * cellSize + cellSize / 2;
                             
                             virtualCellPos = ( float2(lx,ty) +
@@ -595,6 +620,7 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
         const float Mass4 = 1;
         const float Mass5 = 10;
         const float Mass6 = 100;
+        const float Mass7 = 1000;
         
         const half4 VacuumColor = half4( 0,0,0,0 );
         const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
@@ -602,167 +628,9 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
         const half4 Color2 = half4( 0,0.25,0.75,1 );
         const half4 Color3 = half4( 0,1,0,1 );
         const half4 Color4 = half4( 1,1,0,1 );
-        const half4 Color5 = half4( 1,0,0,1 );
-        const half4 Color6 = half4( 1,1,1,1 );
-        
-        if( inOutCellBuffer[i].mass < Mass0 )
-        {
-            renderTexture[xy] = lerp( VacuumColor, Color0, inOutCellBuffer[i].mass / Mass0 );   
-        } 
-        else if( inOutCellBuffer[i].mass < Mass1 )
-        {
-            renderTexture[xy] = lerp( Color0, Color1, (inOutCellBuffer[i].mass-Mass0) / (Mass1-Mass0) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass2 )
-        {
-            renderTexture[xy] = lerp( Color1, Color2, (inOutCellBuffer[i].mass-Mass1) / (Mass2-Mass1) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass3 )
-        {
-            renderTexture[xy] = lerp( Color2, Color3, (inOutCellBuffer[i].mass-Mass2) / (Mass3-Mass2) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass4 )
-        {
-            renderTexture[xy] = lerp( Color3, Color4, (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass5 )
-        {
-            renderTexture[xy] = lerp( Color4, Color5, (inOutCellBuffer[i].mass-Mass4) / (Mass5-Mass4) );
-        }
-        else 
-        {
-            renderTexture[xy] = lerp( Color5, Color6, (inOutCellBuffer[i].mass-Mass5) / (Mass6-Mass5) );
-        }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel DrawMomentums
-
-[numthreads(GROUPSIZE,1,1)]
-void DrawMomentums(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);
-        
-    if( i < width*height )
-    {        
-        int y = i / width;
-        int x = i - y * width;        
-        
-        int2 xy = int2( x,y );
-        
-        const float VelocityScale = 1.0;
-       
-        float2 vel = inOutCellBuffer[i].vel;
-        float mag = length(vel);
-        vel = normalize(vel);
-               
-        //vel = ( vel + 1.0 ) * 0.5;
-        //vel *= saturate( mag / VelocityScale );
-        //vel *= sign( inOutCellBuffer[i].mass );
-        
-        float hue = Angle360( vel, float2(1,0) ) / 360;
-        float value = saturate( mag / VelocityScale );
-        
-        const float Mass0 = 0.0f;
-        const float Mul0 = 0.0f;
-        const float Mass1 = 0.001f;
-        const float Mul1 = 1.0f;
-        float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
-        
-        value *= factor;      
-       
-        //renderTexture[xy] = half4( vel, 0, 1 );
-        renderTexture[xy] = half4( HSV2RGB( float3(hue,1,value) ), 1 );
-        
-        // legend        
-        const float LegendScale = 0.25f;        
-        renderTexture[xy] = DrawLegend( x, y, LegendScale, renderTexture[xy] );           
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel DrawForces
-
-[numthreads(GROUPSIZE,1,1)]
-void DrawForces(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);
-        
-    if( i < width*height )
-    {        
-        int y = i / width;
-        int x = i - y * width;        
-        
-        int2 xy = int2( x,y );
-        
-        const float ForceScale = 0.0001;
-       
-        float2 force = inOutCellBuffer[i].force;
-        float mag = length(force);
-        force = normalize(force);
-        
-        float hue = Angle360( force, float2(1,0) ) / 360;
-        float value = saturate( mag / ForceScale );                 
-               
-        //force = ( force + 1.0 ) * 0.5;
-        //force *= saturate( mag / ForceScale );
-        //force *= sign( inOutCellBuffer[i].mass );
-        
-        const float Mass0 = 0.0f;
-        const float Mul0 = 0.0f;
-        const float Mass1 = 0.001f;
-        const float Mul1 = 1.0f;
-        float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
-        value *= factor;
-       
-        //renderTexture[xy] = half4( force, 0, 1 );           
-        renderTexture[xy] = half4( HSV2RGB( float3(hue,1,value) ), 1 );
-        
-        // legend        
-        const float LegendScale = 0.25f;        
-        renderTexture[xy] = DrawLegend( x, y, LegendScale, renderTexture[xy] );
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel DrawSyntheticImage
-
-[numthreads(GROUPSIZE,1,1)]
-void DrawSyntheticImage(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);
-        
-    if( i < width*height )
-    {        
-        int y = i / width;
-        int x = i - y * width;        
-        
-        int2 xy = int2( x,y );
-                
-        const float Mass0 = 0.0001;
-        const float Mass1 = 0.001;
-        const float Mass2 = 0.01;
-        const float Mass3 = 0.1;
-        const float Mass4 = 1;
-        const float Mass5 = 10;
-        const float Mass6 = 100;
-        const float Mass7 = 1000;
-        const float Mass8 = 10000;
-        
-        const half4 VacuumColor = half4( 0,0,0,0 );
-        const half4 Color0 = half4( 0.10011, 0.10011, 0.10011, 1 );
-        const half4 Color1 = half4( 0.13348, 0.13348, 0.13348, 1 );
-        const half4 Color2 = half4( 0.17798, 0.17798, 0.17798, 1 );
-        const half4 Color3 = half4( 0.23730, 0.23730, 0.23730, 1 );
-        const half4 Color4 = half4( 0.31641, 0.31641, 0.31641, 1 );
-        const half4 Color5 = half4( 0.42188, 0.42188, 0.42188, 1 );
-        const half4 Color6 = half4( 0.5625, 0.5625, 0.5625,1 );
-        const half4 Color7 = half4( 0.75, 0.75, 0.75, 1 );
-        const half4 Color8 = half4( 1,1,1,1 );
+        const half4 Color5 = half4( 1,0.5,0,1 );
+        const half4 Color6 = half4( 1,0,0,1 );
+        const half4 Color7 = half4( 1,1,1,1 );
         
         if( inOutCellBuffer[i].mass < Mass0 )
         {
@@ -792,13 +660,105 @@ void DrawSyntheticImage(uint3 id : SV_DispatchThreadID)
         {
             renderTexture[xy] = lerp( Color5, Color6, (inOutCellBuffer[i].mass-Mass5) / (Mass6-Mass5) );
         }
-        else if( inOutCellBuffer[i].mass < Mass7 )
+        else
         {
             renderTexture[xy] = lerp( Color6, Color7, (inOutCellBuffer[i].mass-Mass6) / (Mass7-Mass6) );
         }
-        else 
-        {
-            renderTexture[xy] = lerp( Color7, Color8, (inOutCellBuffer[i].mass-Mass7) / (Mass8-Mass7) );
-        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawMomentums
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawMomentums(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+        
+    if( i < width*height )
+    {        
+        int y = i / width;
+        int x = i - y * width;        
+        
+        int2 xy = int2( x,y );
+        
+        const float VelocityScale = 1.0;
+       
+        float2 vel = inOutCellBuffer[i].vel;
+        float mag = length(vel) * inOutCellBuffer[i].mass;
+        vel = normalize(vel);
+        
+        // LOG: 0.0000001 0.000001 0.00001 0.000   0.001   0.01    0.1     1.0    10.0   100.0  1000.0
+        // LIN: 0.0563    0.0750   0.1001  0.1334  0.1779  0.2373  0.3164  0.4218  0.5625  0.75    1.0
+        
+        float hue = Angle360( vel, float2(1,0) ) / 360;
+        float value = LogToLinear( mag, 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );
+       
+        //renderTexture[xy] = half4( vel, 0, 1 );
+        renderTexture[xy] = half4( HSV2RGB( float3(hue,1,value) ), 1 );
+        
+        // legend        
+        const float LegendScale = 0.25f;        
+        renderTexture[xy] = DrawLegend( x, y, LegendScale, renderTexture[xy] );           
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawForces
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawForces(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+        
+    if( i < width*height )
+    {        
+        int y = i / width;
+        int x = i - y * width;        
+        
+        int2 xy = int2( x,y );
+       
+        float2 force = inOutCellBuffer[i].force;
+        float mag = length(force);
+        force = normalize(force);
+    
+        // LOG: 0.0000001 0.000001 0.00001 0.000   0.001   0.01    0.1     1.0    10.0   100.0  1000.0
+        // LIN: 0.0563    0.0750   0.1001  0.1334  0.1779  0.2373  0.3164  0.4218  0.5625  0.75    1.0
+        
+        float hue = Angle360( force, float2(1,0) ) / 360;                
+        float value = LogToLinear( mag, 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );                 
+                 
+        renderTexture[xy] = half4( HSV2RGB( float3(hue,1,value) ), 1 );
+        
+        // legend        
+        const float LegendScale = 0.25f;        
+        renderTexture[xy] = DrawLegend( x, y, LegendScale, renderTexture[xy] );
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawSyntheticImage
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawSyntheticImage(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+        
+    if( i < width*height )
+    {        
+        int y = i / width;
+        int x = i - y * width;        
+        
+        int2 xy = int2( x,y );
+        
+        half4 result = half4(0,0,0,1);
+        result.r = LogToLinear( inOutCellBuffer[i].mass, 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );                
+        result.g = LogToLinear( length(inOutCellBuffer[i].vel) * inOutCellBuffer[i].mass, 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );
+        result.b = LogToLinear( length(inOutCellBuffer[i].force), 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );
+        
+        renderTexture[xy] = result; 
     }
 }

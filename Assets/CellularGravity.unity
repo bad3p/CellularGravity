@@ -814,20 +814,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   DeltaTime: {fileID: 2098226924}
   TotalMass: {fileID: 1414797702}
-  Resolution: 3
+  Resolution: 5
   InitialMassMultiplier: 25
   CellSize: 100
-  Gravity: 1.76
+  Gravity: 3.1415925
   Density: 125
   MaxMassPropagationWindow: 0
   MaxCellOffset: 1
-  MaxDeltaTime: 2.5
-  DisplayMode: 0
-  MassGradientFilterSigma: 21
-  MassGradientFilterSize: 243
-  MassLuminance: 100
+  MaxDeltaTime: 5
+  DisplayMode: 1
   MassTexture: {fileID: 2800000, guid: fd1a0c09bd25f4c4f99ec1b685b6b127, type: 3}
-  InitialVelocityBias: {x: -1.25, y: 0.125}
+  InitialVelocityBias: {x: -1, y: 0.125}
   InitialMassBias: {x: 0.0625, y: 0.75}
 --- !u!114 &676854613
 MonoBehaviour:
