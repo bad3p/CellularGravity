@@ -889,19 +889,19 @@ MonoBehaviour:
   DeltaTime: {fileID: 2098226924}
   TotalMass: {fileID: 1414797702}
   ScopeImage: {fileID: 386808340}
-  ScopeResolution: 36
+  ScopeResolution: 30
   ScopeDetails: 64
-  Resolution: 1
+  Resolution: 4
   InitialMassMultiplier: 10
   CellSize: 100
-  Gravity: 1
-  Density: 33
-  MaxMassPropagationWindow: 2
-  MaxCellOffset: 2
-  MaxDeltaTime: 2
+  Gravity: 9
+  Density: 3
+  MaxMassPropagationWindow: 0
+  MaxCellOffset: 1
+  MaxDeltaTime: 1
   DisplayMode: 1
   MassTexture: {fileID: 2800000, guid: fd1a0c09bd25f4c4f99ec1b685b6b127, type: 3}
-  InitialVelocityBias: {x: -0.375, y: 0.125}
+  InitialVelocityBias: {x: -1, y: 0.125}
   InitialMassBias: {x: 0.0625, y: 0.75}
 --- !u!114 &676854613
 MonoBehaviour:
@@ -1505,7 +1505,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: Momenta
+  m_Text: Moments
 --- !u!222 &1270731215
 CanvasRenderer:
   m_ObjectHideFlags: 0

@@ -29,7 +29,9 @@ RWStructuredBuffer<float3> inOutMassSATBuffer;
 RWStructuredBuffer<float4> inOutCellRectBuffer;
 RWStructuredBuffer<int> inOutMassPropagationBuffer;
 RWStructuredBuffer<float> filterWeights;
-RWTexture2D<half4> renderTexture; 
+RWTexture2D<half4> renderTexture;
+RWTexture2D<half4> inRenderTexture;
+RWTexture2D<half4> outRenderTexture; 
 
 float gravity;
 float cellSize;
@@ -44,6 +46,10 @@ int scopePosY;
 int scopeWindowWidth;
 int scopeWindowHeight;
 int scopeCellResolution;
+int originalWidth;
+int originalHeight;
+int downsampledWidth;
+int downsampledHeight;
 
 //////////////////////////////////////////////////////////////////////////////////////
  
@@ -779,6 +785,7 @@ float SDTriangleIsosceles(float2 p, float2 q)
 {
     // Inigo Quilez
     // https://www.iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
+
     p.x = abs(p.x);
     float2 a = p - q * clamp( dot(p,q)/dot(q,q), 0.0, 1.0 );
     float2 b = p - q * float2( clamp( p.x/q.x, 0.0, 1.0 ), 1.0 );
@@ -791,19 +798,13 @@ float SDTriangleIsosceles(float2 p, float2 q)
 [numthreads(GROUPSIZE,1,1)]
 void DrawScopeImage(uint3 id : SV_DispatchThreadID)
 {
-    // scopePosX
-    // scopePosY
-    // scopeWindowWidth
-    // scopeWindowHeight
-    // scopeCellResolution
-
     int i = int(id.x);
     
     int renderTextureWidth = scopeWindowWidth * scopeCellResolution;
     int renderTextureHeight = scopeWindowHeight * scopeCellResolution; 
           
     if( i < renderTextureWidth * renderTextureHeight )
-    {        
+    {
         int y = i / renderTextureWidth;
         int x = i - y * renderTextureWidth;
         int2 xy = int2( x, y );
@@ -828,7 +829,7 @@ void DrawScopeImage(uint3 id : SV_DispatchThreadID)
             int cellX = scopePosX + cx;
             int cellY = scopePosY + cy;
             int cellIndex = cellY * width + cellX;
-            renderTexture[xy] = MassToColor( inOutCellBuffer[cellIndex].mass );
+            renderTexture[xy] = saturate( MassToColor( inOutCellBuffer[cellIndex].mass ) );
                
             float2 vel = inOutCellBuffer[cellIndex].vel;
             float magnitude = length(vel);
@@ -847,8 +848,70 @@ void DrawScopeImage(uint3 id : SV_DispatchThreadID)
                 
                 float distance = SDTriangleIsosceles( p, triangleSize );
                 float outline = smoothstep( 0.0, scopeCellResolution/16, distance ) + ( 1.0 - smoothstep( -scopeCellResolution/16, 0, distance ) );                                                 
-                renderTexture[xy] *= outline;    
+                renderTexture[xy] *= outline;
             }
         }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel BicubicDownsample
+
+float Bell( float x )
+{
+	float f = ( x / 2.0 ) * 1.5; // Converting -2 to +2 to -1.5 to +1.5
+	if( f > -1.5 && f < -0.5 )
+	{
+		return( 0.5 * pow(f + 1.5, 2.0));
+	}
+	else if( f > -0.5 && f < 0.5 )
+	{
+		return 3.0 / 4.0 - ( f * f );
+	}
+	else if( ( f > 0.5 && f < 1.5 ) )
+	{
+		return( 0.5 * pow(f - 1.5, 2.0));
+	}
+	return 0.0;
+}
+
+[numthreads(GROUPSIZE,1,1)]
+void BicubicDownsample(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < downsampledWidth * downsampledHeight )
+    {
+        int y = i / downsampledWidth;
+        int x = i - y * downsampledWidth;
+        int2 xy = int2( x, y );
+        
+        float2 uv = float2( x, y ) / float2( downsampledWidth, downsampledHeight );
+        
+        float4 nSum = float4( 0.0, 0.0, 0.0, 0.0 );
+        float4 nDenom = float4( 0.0, 0.0, 0.0, 0.0 );
+        float a = frac( uv.x * originalWidth );
+        float b = frac( uv.y * originalHeight );
+        
+        int2 oxy0 = int2( uv * float2( originalWidth, originalHeight ) );
+        
+        for( int m = -1; m <=2; m++ )
+        {
+            for( int n =-1; n<= 2; n++)
+            {
+                int2 oxy1 = oxy0 + int2( m, n );
+                        
+                float4 vecData = inRenderTexture[oxy1];
+			    float f  = Bell( float( m ) - a );
+			    float4 vecCooef1 = float4( f,f,f,f );
+			    float f1 = Bell( -( float( n ) - b ) );
+			    float4 vecCoeef2 = float4( f1, f1, f1, f1 );
+                nSum = nSum + ( vecData * vecCoeef2 * vecCooef1  );
+                nDenom = nDenom + (( vecCoeef2 * vecCooef1 )); 
+            }
+        }
+        
+        outRenderTexture[xy] = nSum / nDenom;  
     }
 }
