@@ -10,7 +10,10 @@ public enum Resolution
 	_324x324,
 	_486x486,
 	_567x567,
+	_648x648,
 	_729x729,
+	_810x810,
+	_972x972,
 	_2187x2187
 };
 
@@ -40,6 +43,9 @@ public partial class CellularGravity : MonoBehaviour
 	[Header("UI")]
 	public Text DeltaTime;
 	public Text TotalMass;
+	public Image ScopeImage;
+	public int ScopeResolution = 27;
+	public int ScopeDetails = 64;
 	[Header("Settings")]
 	public Resolution Resolution = Resolution._81x81;
 	public float InitialMassMultiplier = 1.0f;
@@ -78,6 +84,7 @@ public partial class CellularGravity : MonoBehaviour
 	private int _height;
 	private Image _image;
 	private Material _gridMaterial;
+	private Material _scopeMaterial;
 	private Cell[] _cells = new Cell[0];
 	private RowStats[] _rowStats = new RowStats[0];
 	private int[] _massPropagations = new int[0];
@@ -90,6 +97,7 @@ public partial class CellularGravity : MonoBehaviour
 	private ComputeBuffer _inOutMassPropagationBuffer = null;
 	private ComputeShader _computeShader = null;
 	private RenderTexture _gridRenderTexture = null;
+	private RenderTexture _scopeRenderTexture = null;
 
 	private int NumMassPropagationIndices
 	{
@@ -135,6 +143,10 @@ public partial class CellularGravity : MonoBehaviour
 		_gridMaterial = new Material( Shader.Find("Unlit/Texture") );
 		_image.material = _gridMaterial;
 		_image.SetMaterialDirty();
+
+		_scopeMaterial = new Material( Shader.Find("Unlit/Texture") );
+		ScopeImage.material = _scopeMaterial;
+		ScopeImage.SetMaterialDirty();
 		
 		string[] resolution = Resolution.ToString().Trim( '_' ).Split( 'x' );
 		if (!int.TryParse(resolution[0], out _width) || !int.TryParse(resolution[1], out _height))
@@ -151,6 +163,13 @@ public partial class CellularGravity : MonoBehaviour
 		_gridRenderTexture.Create();
 		
 		_gridMaterial.mainTexture = _gridRenderTexture;
+		
+		_scopeRenderTexture = new RenderTexture( ScopeResolution * ScopeDetails, ScopeResolution * ScopeDetails, 0, RenderTextureFormat.ARGBHalf );		
+		_scopeRenderTexture.enableRandomWrite = true;
+		_scopeRenderTexture.filterMode = FilterMode.Point;
+		_scopeRenderTexture.Create();
+		
+		_scopeMaterial.mainTexture = _scopeRenderTexture;
 
 		int nodeBufferLength = 0;
 		int gridBufferLength = 0;
@@ -258,5 +277,19 @@ public partial class CellularGravity : MonoBehaviour
 			default:
 				break;
 		}
+		
+		int drawScopeImage = _computeShader.FindKernel("DrawScopeImage");
+		int numberOfScopeGroups = Mathf.CeilToInt( (float)(ScopeResolution*ScopeResolution*ScopeDetails*ScopeDetails) / GPUGroupSize );
+
+		_computeShader.SetInt("width", _width ); 
+		_computeShader.SetInt("height", _height );
+		_computeShader.SetInt("scopePosX", _width / 2 - ScopeResolution / 2); 
+		_computeShader.SetInt("scopePosY", _height / 2 - ScopeResolution / 2);
+		_computeShader.SetInt("scopeWindowWidth", ScopeResolution);
+		_computeShader.SetInt("scopeWindowHeight", ScopeResolution);
+		_computeShader.SetInt("scopeCellResolution", ScopeDetails);
+		_computeShader.SetBuffer(drawScopeImage, "inOutCellBuffer", _inCellBuffer);
+		_computeShader.SetTexture(drawScopeImage, "renderTexture", _scopeRenderTexture);
+		_computeShader.Dispatch(drawScopeImage, numberOfScopeGroups, 1, 1);
 	}
 }

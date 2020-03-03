@@ -39,7 +39,11 @@ float density;
 int width;
 int height;
 int numMassPropagationIndices;
-
+int scopePosX;
+int scopePosY;
+int scopeWindowWidth;
+int scopeWindowHeight;
+int scopeCellResolution;
 
 //////////////////////////////////////////////////////////////////////////////////////
  
@@ -82,6 +86,61 @@ float LogToLinear(float value, float minLog, float maxLog, float minLinear, floa
         
         return lerp( linearValue0, linearValue1, (value - logValue0)/(logValue1 - logValue0) );
     }  
+}
+
+half4 MassToColor(float mass)
+{
+    const float Mass0 = 0.0001;
+    const float Mass1 = 0.001;
+    const float Mass2 = 0.01;
+    const float Mass3 = 0.1;
+    const float Mass4 = 1;
+    const float Mass5 = 10;
+    const float Mass6 = 100;
+    const float Mass7 = 1000;
+    
+    const half4 VacuumColor = half4( 0,0,0,0 );
+    const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
+    const half4 Color1 = half4( 0,0,1,1 );
+    const half4 Color2 = half4( 0,0.25,0.75,1 );
+    const half4 Color3 = half4( 0,1,0,1 );
+    const half4 Color4 = half4( 1,1,0,1 );
+    const half4 Color5 = half4( 1,0.5,0,1 );
+    const half4 Color6 = half4( 1,0,0,1 );
+    const half4 Color7 = half4( 1,1,1,1 );
+    
+    if( mass < Mass0 )
+    {
+        return lerp( VacuumColor, Color0, mass / Mass0 );   
+    } 
+    else if( mass < Mass1 )
+    {
+        return lerp( Color0, Color1, (mass-Mass0) / (Mass1-Mass0) );
+    }
+    else if( mass < Mass2 )
+    {
+        return lerp( Color1, Color2, (mass-Mass1) / (Mass2-Mass1) );
+    }
+    else if( mass < Mass3 )
+    {
+        return lerp( Color2, Color3, (mass-Mass2) / (Mass3-Mass2) );
+    }
+    else if( mass < Mass4 )
+    {
+        return lerp( Color3, Color4, (mass-Mass3) / (Mass4-Mass3) );
+    }
+    else if( mass < Mass5 )
+    {
+        return lerp( Color4, Color5, (mass-Mass4) / (Mass5-Mass4) );
+    }
+    else if( mass < Mass6 )
+    {
+        return lerp( Color5, Color6, (mass-Mass5) / (Mass6-Mass5) );
+    }
+    else
+    {
+        return lerp( Color6, Color7, (mass-Mass6) / (Mass7-Mass6) );
+    }
 }
 
 float Angle(float2 from, float2 to)
@@ -612,58 +671,7 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
         int x = i - y * width;        
         
         int2 xy = int2( x,y );
-                
-        const float Mass0 = 0.0001;
-        const float Mass1 = 0.001;
-        const float Mass2 = 0.01;
-        const float Mass3 = 0.1;
-        const float Mass4 = 1;
-        const float Mass5 = 10;
-        const float Mass6 = 100;
-        const float Mass7 = 1000;
-        
-        const half4 VacuumColor = half4( 0,0,0,0 );
-        const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
-        const half4 Color1 = half4( 0,0,1,1 );
-        const half4 Color2 = half4( 0,0.25,0.75,1 );
-        const half4 Color3 = half4( 0,1,0,1 );
-        const half4 Color4 = half4( 1,1,0,1 );
-        const half4 Color5 = half4( 1,0.5,0,1 );
-        const half4 Color6 = half4( 1,0,0,1 );
-        const half4 Color7 = half4( 1,1,1,1 );
-        
-        if( inOutCellBuffer[i].mass < Mass0 )
-        {
-            renderTexture[xy] = lerp( VacuumColor, Color0, inOutCellBuffer[i].mass / Mass0 );   
-        } 
-        else if( inOutCellBuffer[i].mass < Mass1 )
-        {
-            renderTexture[xy] = lerp( Color0, Color1, (inOutCellBuffer[i].mass-Mass0) / (Mass1-Mass0) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass2 )
-        {
-            renderTexture[xy] = lerp( Color1, Color2, (inOutCellBuffer[i].mass-Mass1) / (Mass2-Mass1) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass3 )
-        {
-            renderTexture[xy] = lerp( Color2, Color3, (inOutCellBuffer[i].mass-Mass2) / (Mass3-Mass2) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass4 )
-        {
-            renderTexture[xy] = lerp( Color3, Color4, (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass5 )
-        {
-            renderTexture[xy] = lerp( Color4, Color5, (inOutCellBuffer[i].mass-Mass4) / (Mass5-Mass4) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass6 )
-        {
-            renderTexture[xy] = lerp( Color5, Color6, (inOutCellBuffer[i].mass-Mass5) / (Mass6-Mass5) );
-        }
-        else
-        {
-            renderTexture[xy] = lerp( Color6, Color7, (inOutCellBuffer[i].mass-Mass6) / (Mass7-Mass6) );
-        }
+        renderTexture[xy] = MassToColor( inOutCellBuffer[i].mass );   
     }
 }
 
@@ -760,5 +768,87 @@ void DrawSyntheticImage(uint3 id : SV_DispatchThreadID)
         result.b = LogToLinear( length(inOutCellBuffer[i].force), 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );
         
         renderTexture[xy] = result; 
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawScopeImage
+
+float SDTriangleIsosceles(float2 p, float2 q)
+{
+    // Inigo Quilez
+    // https://www.iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
+    p.x = abs(p.x);
+    float2 a = p - q * clamp( dot(p,q)/dot(q,q), 0.0, 1.0 );
+    float2 b = p - q * float2( clamp( p.x/q.x, 0.0, 1.0 ), 1.0 );
+    float s = -sign( q.y );
+    float2 d = min( float2( dot(a,a), s*(p.x*q.y-p.y*q.x) ),
+                    float2( dot(b,b), s*(p.y-q.y)  ));
+    return -sqrt(d.x) * sign(d.y);
+}
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawScopeImage(uint3 id : SV_DispatchThreadID)
+{
+    // scopePosX
+    // scopePosY
+    // scopeWindowWidth
+    // scopeWindowHeight
+    // scopeCellResolution
+
+    int i = int(id.x);
+    
+    int renderTextureWidth = scopeWindowWidth * scopeCellResolution;
+    int renderTextureHeight = scopeWindowHeight * scopeCellResolution; 
+          
+    if( i < renderTextureWidth * renderTextureHeight )
+    {        
+        int y = i / renderTextureWidth;
+        int x = i - y * renderTextureWidth;
+        int2 xy = int2( x, y );
+        
+        int cy = y / scopeCellResolution;
+        int cx = x / scopeCellResolution;
+        
+        int py = y % scopeCellResolution;
+        int px = x % scopeCellResolution;
+        
+        if( py <= 1 || px <= 1 )
+        {
+            renderTexture[xy] = half4( 0.25, 0.25, 0.25, 1 );
+        }
+        else
+        {
+            renderTexture[xy] = half4( 1, 1, 1, 1 );
+        }
+        
+        if( py > 1 && px > 1 && py < scopeCellResolution && px < scopeCellResolution )
+        {
+            int cellX = scopePosX + cx;
+            int cellY = scopePosY + cy;
+            int cellIndex = cellY * width + cellX;
+            renderTexture[xy] = MassToColor( inOutCellBuffer[cellIndex].mass );
+               
+            float2 vel = inOutCellBuffer[cellIndex].vel;
+            float magnitude = length(vel);
+            if( magnitude > EPSILON )
+            {
+                float2 dir = vel / magnitude;
+                
+                float2 triangleSize = float2( scopeCellResolution / 8, scopeCellResolution / 2 );
+                
+                float angle = radians( Angle360( dir, float2(0.0,-1.0) ) );
+                float2x2 rm = float2x2( cos(angle), -sin(angle), sin(angle), cos(angle) );
+                
+                float2 p = float2( px, py ) - float2(scopeCellResolution,scopeCellResolution) / 2;                
+                p = mul( rm, p );
+                p.y += triangleSize.y/2;
+                
+                float distance = SDTriangleIsosceles( p, triangleSize );
+                float outline = smoothstep( 0.0, scopeCellResolution/16, distance ) + ( 1.0 - smoothstep( -scopeCellResolution/16, 0, distance ) );                                                 
+                renderTexture[xy] *= outline;    
+            }
+        }
     }
 }
