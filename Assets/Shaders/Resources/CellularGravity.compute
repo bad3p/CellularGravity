@@ -292,10 +292,14 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
                                                    inOutMassSATBuffer[iMinMin];
                                   
                             float virtualCellMass = massSATSample.x;
-                            float virtualCellWeight = massSATSample.x + (xMax-xMin)*(yMax-yMin);                            
+                            float virtualCellWeight = massSATSample.x;                            
                             float2 virtualCellPos = massSATSample.yz;
-                            virtualCellPos = virtualCellPos / virtualCellWeight;
+                            if( virtualCellWeight > EPSILON )
+                            {
+                                virtualCellPos = virtualCellPos / virtualCellWeight;
+                            }
                             
+                            /* uncomment to turn off the effect of center-of-masses */
                             /* 
                             float lx = (xMin+1) * cellSize + cellSize / 2;
                             float rx = xMax * cellSize + cellSize / 2;
@@ -517,10 +521,9 @@ void InitMassSAT(uint3 id : SV_DispatchThreadID)
         int x = i - y * width;
         
         float mass = inCellBuffer[i].mass;
-        float weight = 1.0 + inCellBuffer[i].mass;
         float2 pos = float2( x * cellSize + cellSize / 2, y * cellSize + cellSize / 2 );   
         
-        outMassSATBuffer[i] = float3( mass, pos * weight );
+        outMassSATBuffer[i] = float3( mass, pos * mass );
     }    
 }
 
