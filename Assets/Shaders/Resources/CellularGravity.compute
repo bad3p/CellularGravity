@@ -235,7 +235,7 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
 
         float2 force = float2( 0, 0 );
     
-        /* this is doubtful, considering mass transit between neighbor cells */
+        /* this is doubtful, considering mass propagation between neighbor cells */
         /*                    
         for (int dy0 = -1; dy0 <= 1; dy0++)
         {

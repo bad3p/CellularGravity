@@ -1,6 +1,7 @@
 ﻿
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 public enum Resolution
 {
@@ -38,7 +39,7 @@ public enum MassPropagationWindow
 };
 
 [RequireComponent(typeof(Image))]
-public partial class CellularGravity : MonoBehaviour
+public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 {
 	[Header("UI")]
 	public Text DeltaTime;
@@ -84,6 +85,8 @@ public partial class CellularGravity : MonoBehaviour
 	private int _height;
 	private int _scopeImageWidth;
 	private int _scopeImageHeight;
+	private int _scopeImagePosX;
+	private int _scopeImagePosY;
 	private Image _image;
 	private Material _gridMaterial;
 	private Material _scopeMaterial;
@@ -172,8 +175,8 @@ public partial class CellularGravity : MonoBehaviour
 		_scopeRenderTexture.filterMode = FilterMode.Point;
 		_scopeRenderTexture.Create();
 
-		_scopeImageWidth = Mathf.FloorToInt( ScopeImage.GetComponent<RectTransform>().sizeDelta.x );
-		_scopeImageHeight = Mathf.FloorToInt( ScopeImage.GetComponent<RectTransform>().sizeDelta.y );
+		_scopeImageWidth = 2 * Mathf.FloorToInt( ScopeImage.GetComponent<RectTransform>().sizeDelta.x );
+		_scopeImageHeight = 2 * Mathf.FloorToInt( ScopeImage.GetComponent<RectTransform>().sizeDelta.y );
 		_downsampledScopeRenderTexture = new RenderTexture( _scopeImageWidth, _scopeImageHeight, 0, RenderTextureFormat.ARGBHalf );
 		_downsampledScopeRenderTexture.enableRandomWrite = true;
 		_downsampledScopeRenderTexture.filterMode = FilterMode.Point;
@@ -245,6 +248,31 @@ public partial class CellularGravity : MonoBehaviour
 	{
 		DisplayMode = DisplayMode.MassSAT;
 	}
+	
+	public void OnPointerClick(PointerEventData pointerEventData)
+	{
+		Vector2 localCursorPos = Vector2.zero;
+		RectTransformUtility.ScreenPointToLocalPointInRectangle(
+			GetComponent<RectTransform>(),
+			pointerEventData.position,
+			pointerEventData.pressEventCamera,
+			out localCursorPos
+		);
+
+		Vector2 widgetSize = GetComponent<RectTransform>().sizeDelta;
+
+		Vector2 localCursorUV = new Vector2
+		(
+			( widgetSize.x / 2 + localCursorPos.x ) / widgetSize.x,
+			( widgetSize.y / 2 + localCursorPos.y ) / widgetSize.y
+		);
+
+		_scopeImagePosX = Mathf.FloorToInt( localCursorUV.x * _width ) - ScopeResolution / 2;
+		_scopeImagePosY = Mathf.FloorToInt( localCursorUV.y * _height ) - ScopeResolution / 2;
+
+		_scopeImagePosX = Mathf.Clamp(_scopeImagePosX, 0, _width - ScopeResolution);
+		_scopeImagePosY = Mathf.Clamp(_scopeImagePosY, 0, _height - ScopeResolution);
+	}
 
 	private void Update()
 	{
@@ -293,8 +321,8 @@ public partial class CellularGravity : MonoBehaviour
 
 		_computeShader.SetInt("width", _width ); 
 		_computeShader.SetInt("height", _height );
-		_computeShader.SetInt("scopePosX", _width / 2 - ScopeResolution / 2); 
-		_computeShader.SetInt("scopePosY", _height / 2 - ScopeResolution / 2);
+		_computeShader.SetInt("scopePosX", _scopeImagePosX ); 
+		_computeShader.SetInt("scopePosY", _scopeImagePosY );
 		_computeShader.SetInt("scopeWindowWidth", ScopeResolution);
 		_computeShader.SetInt("scopeWindowHeight", ScopeResolution);
 		_computeShader.SetInt("scopeCellResolution", ScopeDetails);
@@ -302,7 +330,6 @@ public partial class CellularGravity : MonoBehaviour
 		_computeShader.SetTexture(drawScopeImage, "renderTexture", _scopeRenderTexture);
 		_computeShader.Dispatch(drawScopeImage, numberOfScopeGroups, 1, 1);
 		
-		/**/
 		int bicubicDownsample = _computeShader.FindKernel("BicubicDownsample");
 		int numberOfBicubicDownsampleGroups = Mathf.CeilToInt( (float)(_scopeImageWidth*_scopeImageHeight) / GPUGroupSize );
 		
