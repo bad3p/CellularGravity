@@ -27,6 +27,14 @@ public enum DisplayMode
 	MassSAT,
 };
 
+public enum ScopeDisplay
+{
+	Disabled,
+	Unfiltered,
+	Bicubic1x,
+	Bicubic2x
+};
+
 public enum MassPropagationWindow
 {
 	_3x3, // max offset : 1.0 x cell size
@@ -58,6 +66,7 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 	public float MaxDeltaTime = 1.0f;
 	[Header("Display")]
 	public DisplayMode DisplayMode = DisplayMode.Masses;
+	public ScopeDisplay ScopeDisplay = ScopeDisplay.Unfiltered;
 	[Header("Seed")]
 	public Texture2D MassTexture;
 	public Vector2 InitialVelocityBias = new Vector2(0.825f,1.125f);
@@ -315,6 +324,11 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 			default:
 				break;
 		}
+
+		if (ScopeDisplay == ScopeDisplay.Disabled)
+		{
+			return;
+		}
 		
 		int drawScopeImage = _computeShader.FindKernel("DrawScopeImage");
 		int numberOfScopeGroups = Mathf.CeilToInt( (float)(ScopeResolution*ScopeResolution*ScopeDetails*ScopeDetails) / GPUGroupSize );
@@ -329,17 +343,63 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 		_computeShader.SetBuffer(drawScopeImage, "inOutCellBuffer", _inCellBuffer);
 		_computeShader.SetTexture(drawScopeImage, "renderTexture", _scopeRenderTexture);
 		_computeShader.Dispatch(drawScopeImage, numberOfScopeGroups, 1, 1);
-		
+
 		int bicubicDownsample = _computeShader.FindKernel("BicubicDownsample");
 		int numberOfBicubicDownsampleGroups = Mathf.CeilToInt( (float)(_scopeImageWidth*_scopeImageHeight) / GPUGroupSize );
 		
-		_computeShader.SetInt("originalWidth", ScopeResolution * ScopeDetails );
-		_computeShader.SetInt("originalHeight", ScopeResolution * ScopeDetails );
-		_computeShader.SetInt("downsampledWidth", _scopeImageWidth);
-		_computeShader.SetInt("downsampledHeight", _scopeImageHeight);
-		_computeShader.SetTexture(bicubicDownsample, "inRenderTexture", _scopeRenderTexture);
-		_computeShader.SetTexture(bicubicDownsample, "outRenderTexture", _downsampledScopeRenderTexture);
-		_computeShader.Dispatch(bicubicDownsample, numberOfBicubicDownsampleGroups, 1, 1);
+		switch (ScopeDisplay)
+		{
+			case ScopeDisplay.Unfiltered:
+				{
+					_scopeMaterial.mainTexture = _scopeRenderTexture;
+				}
+				break;
+			case ScopeDisplay.Bicubic1x:
+				{
+					_computeShader.SetInt("originalWidth", ScopeResolution * ScopeDetails);
+					_computeShader.SetInt("originalHeight", ScopeResolution * ScopeDetails);
+					_computeShader.SetInt("downsampledWidth", _scopeImageWidth);
+					_computeShader.SetInt("downsampledHeight", _scopeImageHeight);
+					_computeShader.SetTexture(bicubicDownsample, "inRenderTexture", _scopeRenderTexture);
+					_computeShader.SetTexture(bicubicDownsample, "outRenderTexture", _downsampledScopeRenderTexture);
+					_computeShader.Dispatch(bicubicDownsample, numberOfBicubicDownsampleGroups, 1, 1);
+					_scopeMaterial.mainTexture = _downsampledScopeRenderTexture;
+				}
+				break;
+			case ScopeDisplay.Bicubic2x:
+				{
+					int intermediateWidth = (ScopeResolution * ScopeDetails + _scopeImageWidth) / 2;
+					int intermediateHeight = (ScopeResolution * ScopeDetails + _scopeImageHeight) / 2;
+					int numberOfIntermediateBicubicDownsampleGroups = Mathf.CeilToInt( (float)(intermediateWidth*intermediateHeight) / GPUGroupSize );
+
+					RenderTexture intermediateRenderTexture = RenderTexture.GetTemporary(intermediateWidth, intermediateHeight, 0, RenderTextureFormat.ARGBHalf);
+					intermediateRenderTexture.enableRandomWrite = true;
+					intermediateRenderTexture.filterMode = FilterMode.Point;
+					if (!intermediateRenderTexture.IsCreated())
+					{
+						intermediateRenderTexture.Create();
+					}
 		
+					_computeShader.SetInt("originalWidth", ScopeResolution * ScopeDetails );
+					_computeShader.SetInt("originalHeight", ScopeResolution * ScopeDetails );
+					_computeShader.SetInt("downsampledWidth", intermediateWidth);
+					_computeShader.SetInt("downsampledHeight", intermediateHeight);
+					_computeShader.SetTexture(bicubicDownsample, "inRenderTexture", _scopeRenderTexture);
+					_computeShader.SetTexture(bicubicDownsample, "outRenderTexture", intermediateRenderTexture);
+					_computeShader.Dispatch(bicubicDownsample, numberOfIntermediateBicubicDownsampleGroups, 1, 1);
+		
+					_computeShader.SetInt("originalWidth", intermediateWidth );
+					_computeShader.SetInt("originalHeight", intermediateHeight );
+					_computeShader.SetInt("downsampledWidth", _scopeImageWidth);
+					_computeShader.SetInt("downsampledHeight", _scopeImageHeight);
+					_computeShader.SetTexture(bicubicDownsample, "inRenderTexture", intermediateRenderTexture);
+					_computeShader.SetTexture(bicubicDownsample, "outRenderTexture", _downsampledScopeRenderTexture);
+					_computeShader.Dispatch(bicubicDownsample, numberOfBicubicDownsampleGroups, 1, 1);
+		
+					RenderTexture.ReleaseTemporary( intermediateRenderTexture );
+					_scopeMaterial.mainTexture = _downsampledScopeRenderTexture;
+				}
+				break;
+		}
 	}
 }
