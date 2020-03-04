@@ -19,6 +19,64 @@ RWTexture2D<half4> outRenderTexture;
 int width;
 int height;
 int satSampleSize;
+int numIterations;
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+half4 ValueToColor(float Value)
+{
+    const float Value0 = 0.00001;
+    const float Value1 = 0.0001;
+    const float Value2 = 0.001;
+    const float Value3 = 0.01;
+    const float Value4 = 0.1;
+    const float Value5 = 1.0;
+    const float Value6 = 10.0;
+    const float Value7 = 100.0;
+    
+    const half4 VacuumColor = half4( 0,0,0,0 );
+    const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
+    const half4 Color1 = half4( 0,0,1,1 );
+    const half4 Color2 = half4( 0,0.25,0.75,1 );
+    const half4 Color3 = half4( 0,1,0,1 );
+    const half4 Color4 = half4( 1,1,0,1 );
+    const half4 Color5 = half4( 1,0.5,0,1 );
+    const half4 Color6 = half4( 1,0,0,1 );
+    const half4 Color7 = half4( 1,1,1,1 );
+    
+    if( Value < Value0 )
+    {
+        return lerp( VacuumColor, Color0, Value / Value0 );   
+    } 
+    else if( Value < Value1 )
+    {
+        return lerp( Color0, Color1, (Value-Value0) / (Value1-Value0) );
+    }
+    else if( Value < Value2 )
+    {
+        return lerp( Color1, Color2, (Value-Value1) / (Value2-Value1) );
+    }
+    else if( Value < Value3 )
+    {
+        return lerp( Color2, Color3, (Value-Value2) / (Value3-Value2) );
+    }
+    else if( Value < Value4 )
+    {
+        return lerp( Color3, Color4, (Value-Value3) / (Value4-Value3) );
+    }
+    else if( Value < Value5 )
+    {
+        return lerp( Color4, Color5, (Value-Value4) / (Value5-Value4) );
+    }
+    else if( Value < Value6 )
+    {
+        return lerp( Color5, Color6, (Value-Value5) / (Value6-Value5) );
+    }
+    else
+    {
+        return lerp( Color6, Color7, (Value-Value6) / (Value7-Value6) );
+    }
+}
 
 //////////////////////////////////////////////////////////////////////////////////////
 
@@ -36,8 +94,8 @@ void InitSATBuffers(uint3 id : SV_DispatchThreadID)
         int y = i / width;
         int x = i - y * width;
           
-        outSATBuffer32[i] = float3( inImageBuffer32[i], float2( x, y ) * (1.0 + inImageBuffer32[i]) );
-        outSATBuffer64[i] = double3( inImageBuffer64[i], double2( x, y ) * (1.0 + inImageBuffer64[i]) );
+        outSATBuffer32[i] = float3( inImageBuffer32[i], float2( x, y ) * inImageBuffer32[i] );
+        outSATBuffer64[i] = double3( inImageBuffer64[i], double2( x, y ) * inImageBuffer64[i] );
     }    
 }
 
@@ -96,61 +154,6 @@ void ComputeSAT(uint3 id : SV_DispatchThreadID)
 
 #pragma kernel DrawSATDifference
 
-half4 ValueToColor(float Value)
-{
-    const float Value0 = 0.00001;
-    const float Value1 = 0.0001;
-    const float Value2 = 0.001;
-    const float Value3 = 0.01;
-    const float Value4 = 0.1;
-    const float Value5 = 1.0;
-    const float Value6 = 10.0;
-    const float Value7 = 100.0;
-    
-    const half4 VacuumColor = half4( 0,0,0,0 );
-    const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
-    const half4 Color1 = half4( 0,0,1,1 );
-    const half4 Color2 = half4( 0,0.25,0.75,1 );
-    const half4 Color3 = half4( 0,1,0,1 );
-    const half4 Color4 = half4( 1,1,0,1 );
-    const half4 Color5 = half4( 1,0.5,0,1 );
-    const half4 Color6 = half4( 1,0,0,1 );
-    const half4 Color7 = half4( 1,1,1,1 );
-    
-    if( Value < Value0 )
-    {
-        return lerp( VacuumColor, Color0, Value / Value0 );   
-    } 
-    else if( Value < Value1 )
-    {
-        return lerp( Color0, Color1, (Value-Value0) / (Value1-Value0) );
-    }
-    else if( Value < Value2 )
-    {
-        return lerp( Color1, Color2, (Value-Value1) / (Value2-Value1) );
-    }
-    else if( Value < Value3 )
-    {
-        return lerp( Color2, Color3, (Value-Value2) / (Value3-Value2) );
-    }
-    else if( Value < Value4 )
-    {
-        return lerp( Color3, Color4, (Value-Value3) / (Value4-Value3) );
-    }
-    else if( Value < Value5 )
-    {
-        return lerp( Color4, Color5, (Value-Value4) / (Value5-Value4) );
-    }
-    else if( Value < Value6 )
-    {
-        return lerp( Color5, Color6, (Value-Value5) / (Value6-Value5) );
-    }
-    else
-    {
-        return lerp( Color6, Color7, (Value-Value6) / (Value7-Value6) );
-    }
-}
-
 [numthreads(GROUPSIZE,1,1)]
 void DrawSATDifference(uint3 id : SV_DispatchThreadID)
 {
@@ -183,17 +186,82 @@ void DrawSATDifference(uint3 id : SV_DispatchThreadID)
                               inSATBuffer64[iMinMin];
         
         float value32 = satSample32.x;
-        float weight32 = satSample32.x + (xMax-xMin)*(yMax-yMin);
-        float2 pos32 = satSample32.yz / weight32;
+        float weight32 = satSample32.x;
+        float2 pos32 = satSample32.yz;
+        if( weight32 > EPSILON )
+        {
+            pos32 /= weight32;
+        }
                               
         double value64 = satSample64.x;
-        double weight64 = satSample64.x + (xMax-xMin)*(yMax-yMin);
-        double2 pos64 = satSample64.yz / weight64;
+        double weight64 = satSample64.x;
+        double2 pos64 = satSample64.yz;
+        if( weight64 > EPSILON )
+        {
+            pos64 /= weight64;
+        }
         
         double valueDiff = value64 - double( value32 ); 
         double2 posDiff = pos64 - double2( pos32 );                                                                                               
                 
-        //outRenderTexture[xy] = ValueToColor( abs( length( posDiff ) ) );    
-        outRenderTexture[xy] = ValueToColor( abs( valueDiff ) );
+        outRenderTexture[xy] = ValueToColor( abs( length( posDiff ) ) );    
+        //outRenderTexture[xy] = ValueToColor( abs( valueDiff ) );
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ResetRenderTexture
+
+[numthreads(GROUPSIZE,1,1)]
+void ResetRenderTexture(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < width * height )
+    {
+        int y = i / width;        
+        int x = i - y * width;
+        int2 xy = int2( x,y );
+
+        outRenderTexture[xy] = half4( 0, 0, 0, 0 );      
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel IntegrateIteration
+
+[numthreads(GROUPSIZE,1,1)]
+void IntegrateIteration(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < width * height )
+    {
+        int y = i / width;        
+        int x = i - y * width;
+        int2 xy = int2( x,y );
+
+        outRenderTexture[xy] += inRenderTexture[xy];      
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawResult
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawResult(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < width * height )
+    {
+        int y = i / width;        
+        int x = i - y * width;
+        int2 xy = int2( x,y );
+
+        outRenderTexture[xy] = inRenderTexture[xy] / numIterations;      
     }
 }
