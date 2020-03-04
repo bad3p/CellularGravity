@@ -63,8 +63,10 @@
     <Compile Include="Assets\Scripts\CellularGravity.cs" />
     <Compile Include="Assets\Scripts\CellularGravityGPU.cs" />
     <Compile Include="Assets\Scripts\CellularGravityPrototype.cs" />
+    <Compile Include="Assets\Scripts\NumericalStability.cs" />
     <Compile Include="Assets\Scripts\RectTest.cs" />
     <None Include="Assets\Shaders\Resources\CellularGravity.compute" />
+    <None Include="Assets\Shaders\Resources\NumericalStability.compute" />
     <Reference Include="Unity.TextMeshPro.Editor">
       <HintPath>D:/Personal/CellularGravity/Library/ScriptAssemblies/Unity.TextMeshPro.Editor.dll</HintPath>
     </Reference>
