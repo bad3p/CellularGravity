@@ -16,6 +16,8 @@ RWStructuredBuffer<double3> outSATBuffer64;
 RWTexture2D<half4> inRenderTexture;
 RWTexture2D<half4> outRenderTexture;
 
+RWStructuredBuffer<double> statsBuffer;
+
 int width;
 int height;
 int satSampleSize;
@@ -206,6 +208,13 @@ void DrawSATDifference(uint3 id : SV_DispatchThreadID)
                 
         outRenderTexture[xy] = ValueToColor( abs( length( posDiff ) ) );    
         //outRenderTexture[xy] = ValueToColor( abs( valueDiff ) );
+        
+        // worst fragment
+        if( x == width - satSampleSize / 2 && y == height - satSampleSize / 2 )
+        {
+            statsBuffer[numIterations*2] = abs( length( posDiff ) );
+            statsBuffer[numIterations*2+1] = abs( valueDiff );             
+        }
     }
 }
 
