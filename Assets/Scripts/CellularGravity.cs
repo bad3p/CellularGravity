@@ -90,6 +90,7 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 		public const int SizeOf = 12; // ComputeShader stride
 	};
 
+	private bool _pause = false;
 	private int _width;
 	private int _height;
 	private int _scopeImageWidth;
@@ -169,6 +170,8 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 			_width = 27;
 			_height = 27;
 		}
+		_scopeImagePosX = _width / 2 - ScopeResolution / 2;
+		_scopeImagePosY = _height / 2 - ScopeResolution / 2;
 		
 		Texture2D massTexture = GetReadableTexture(MassTexture, _width, _height);
 
@@ -258,6 +261,16 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 		DisplayMode = DisplayMode.MassSAT;
 	}
 	
+	public void Play(string arg)
+	{
+		_pause = false;
+	}
+	
+	public void Pause(string arg)
+	{
+		_pause = true;
+	}
+	
 	public void OnPointerClick(PointerEventData pointerEventData)
 	{
 		Vector2 localCursorPos = Vector2.zero;
@@ -285,8 +298,11 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 
 	private void Update()
 	{
-		SimulateGPU();
-		
+		if (!_pause)
+		{
+			SimulateGPU();
+		}
+
 		int drawMasses = _computeShader.FindKernel( "DrawMasses" );
 		int drawMomentums = _computeShader.FindKernel( "DrawMomentums" );
 		int drawForces = _computeShader.FindKernel( "DrawForces" );

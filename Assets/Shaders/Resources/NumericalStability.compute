@@ -80,6 +80,19 @@ half4 ValueToColor(float Value)
     }
 }
 
+float Angle(float2 from, float2 to)
+{
+    float fromSqrMag = from.x*from.x + from.y*from.y;
+    float toSqrMag = to.x*to.x + to.y*to.y;
+
+    float num = sqrt( fromSqrMag * toSqrMag);
+    if ( num < 5.96E-08 )
+    {
+        return 0.0f;
+    }
+    return acos( clamp( dot(from, to) / num, -1.0, 1.0) ) * 57.29578;
+}
+
 //////////////////////////////////////////////////////////////////////////////////////
 
 #pragma kernel InitSATBuffers
@@ -204,10 +217,13 @@ void DrawSATDifference(uint3 id : SV_DispatchThreadID)
         }
         
         double valueDiff = value64 - double( value32 ); 
-        double2 posDiff = pos64 - double2( pos32 );                                                                                               
+        double2 posDiff = pos64 - double2( pos32 );
+         
+        double posDiffPolar = abs( Angle( normalize( pos32 - xy ), normalize(pos64 - xy)) );                                                                                                
                 
         outRenderTexture[xy] = ValueToColor( abs( length( posDiff ) ) );    
         //outRenderTexture[xy] = ValueToColor( abs( valueDiff ) );
+        //outRenderTexture[xy] = ValueToColor( abs( posDiffPolar ) );
         
         // worst fragment
         if( x == width - satSampleSize / 2 && y == height - satSampleSize / 2 )

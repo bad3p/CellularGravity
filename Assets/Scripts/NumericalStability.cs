@@ -310,6 +310,23 @@ public class NumericalStability : MonoBehaviour
     private int _batchSampleSize = 2;
     private int _batchStep = 0;
 
+    private int[] BatchSampleSizes = new int[]
+    {
+		2, 4, 8, 12, 16, 24, 32, 40, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096    
+    };
+
+    private int GetNextBatchSampleSize(int batchSampleSize)
+    {
+	    for (int i = 0; i < BatchSampleSizes.Length-1; i++)
+	    {
+		    if (BatchSampleSizes[i] == batchSampleSize)
+		    {
+			    return BatchSampleSizes[i+1];
+		    }
+	    }
+	    return BatchSampleSizes[BatchSampleSizes.Length-1];
+    }
+
     void ProcessBatchMode()
     {
 	    if (_batchStep > 0)
@@ -340,7 +357,7 @@ public class NumericalStability : MonoBehaviour
 		    }	
 	    }
 
-	    _batchSampleSize *= 2;
+	    _batchSampleSize = GetNextBatchSampleSize(_batchSampleSize);
 	    if (_batchSampleSize > _batchResolution / 4)
 	    {
 		    _batchSampleSize = 2;

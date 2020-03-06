@@ -573,9 +573,9 @@ MonoBehaviour:
   BatchExponent: {fileID: 1001191252}
   Resolution: 128
   InitialBias: {x: 0, y: 1}
-  SATSampleSize: 2
+  SATSampleSize: 4
   NumIterations: 256
-  BatchMode: 1
+  BatchMode: 0
 --- !u!114 &1681933166
 MonoBehaviour:
   m_ObjectHideFlags: 0
