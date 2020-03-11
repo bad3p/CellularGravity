@@ -1200,17 +1200,17 @@ MonoBehaviour:
   ScopeResolution: 54
   ScopeDetails: 64
   Resolution: 7
-  InitialMassMultiplier: 10
+  InitialMassMultiplier: 9
   CellSize: 100
-  Gravity: 1.57
+  Gravity: 3.1415925
   Density: 33
   MaxMassPropagationWindow: 0
   MaxCellOffset: 1
   MaxDeltaTime: 2.5
   DisplayMode: 1
-  ScopeDisplay: 3
+  ScopeDisplay: 0
   MassTexture: {fileID: 2800000, guid: fd1a0c09bd25f4c4f99ec1b685b6b127, type: 3}
-  InitialVelocityBias: {x: 0.375, y: 0.125}
+  InitialVelocityBias: {x: 0.75, y: -0.25}
   InitialMassBias: {x: 0.0625, y: 0.75}
 --- !u!114 &676854613
 MonoBehaviour:

@@ -220,108 +220,110 @@ void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
     
-    int length0 = width * height;
-    
-    if( i < length0 )
-    {     
-        int width0 = width;
-        int height0 = height;
-                     
-        int y0 = i / width0;
-        int x0 = i - y0 * width0;
-
-        float2 p0 = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );
+    if( i < width * height )
+    {        
         float m0 = inOutCellBuffer[i].mass;
-
-        float2 force = float2( 0, 0 );
-    
-        /* this is doubtful, considering mass propagation between neighbor cells */
-        /*                    
-        for (int dy0 = -1; dy0 <= 1; dy0++)
-        {
-            for (int dx0 = -1; dx0 <= 1; dx0++)
-            {
-                if ( !(dy0 == 0 && dx0 == 0) )
-                {
-                    int y1 = y0 + dy0;
-                    int x1 = x0 + dx0;
-                        
-                    if (x1 >= 0 && x1 < width0 && y1 >= 0 && y1 < height0)
-                    {
-                        int j = y1 * width0 + x1;
-                        
-                        float2 p1 = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );
-                        float m1 = inOutCellBuffer[j].mass;
-                        force += GravityForce( p0, m0, p1, m1 );
-                    }                        
-                }
-            }
-        }
-        */
-                
-        int offset = 3;
-        int maxOffset = max(width,height);                
-        while( offset <= maxOffset )
-        {
-            int halfOffset = offset / 2;
         
+        if( m0 > EPSILON )
+        {
+            int y0 = i / width;
+            int x0 = i - y0 * width;
+        
+            float2 p0 = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );
+        
+            float2 force = float2( 0, 0 );
+            
+            /* this is doubtful, considering mass propagation between neighbor cells */
+            /*                    
             for (int dy0 = -1; dy0 <= 1; dy0++)
             {
                 for (int dx0 = -1; dx0 <= 1; dx0++)
-                {                
+                {
                     if ( !(dy0 == 0 && dx0 == 0) )
                     {
-                        int y1 = y0 + dy0 * offset;
-                        int x1 = x0 + dx0 * offset;
-                        
-                        int yMin = max( 0, y1 - halfOffset - 1 );
-                        int xMin = max( 0, x1 - halfOffset - 1 );                        
-                        int yMax = min( height0 - 1, y1 + halfOffset );
-                        int xMax = min( width0 - 1, x1 + halfOffset );
-                        
-                        if( yMin < yMax && xMin < xMax )
+                        int y1 = y0 + dy0;
+                        int x1 = x0 + dx0;
+                            
+                        if (x1 >= 0 && x1 < width && y1 >= 0 && y1 < height)
                         {
-                            int iMinMin = yMin * width0 + xMin;
-                            int iMaxMin = yMin * width0 + xMax;
-                            int iMaxMax = yMax * width0 + xMax;
-                            int iMinMax = yMax * width0 + xMin;                                   
-                                                    
-                            float3 massSATSample = inOutMassSATBuffer[iMaxMax] -
-                                                   inOutMassSATBuffer[iMinMax] -                                                     
-                                                   inOutMassSATBuffer[iMaxMin] +
-                                                   inOutMassSATBuffer[iMinMin];
-                                  
-                            float virtualCellMass = massSATSample.x;
-                            float virtualCellWeight = massSATSample.x;                            
-                            float2 virtualCellPos = massSATSample.yz;
-                            if( virtualCellWeight > EPSILON )
-                            {
-                                virtualCellPos = virtualCellPos / virtualCellWeight;
-                            }
+                            int j = y1 * width + x1;
                             
-                            /* uncomment to turn off the effect of center-of-masses */
-                            /* 
-                            float lx = (xMin+1) * cellSize + cellSize / 2;
-                            float rx = xMax * cellSize + cellSize / 2;
-                            float ty = (yMin+1) * cellSize + cellSize / 2;
-                            float by = yMax * cellSize + cellSize / 2;
-                            
-                            virtualCellPos = ( float2(lx,ty) +
-                                                      float2(rx,ty) +
-                                                      float2(rx,by) +
-                                                      float2(lx,by) ) / 4; 
-                            */
-                                                     
-                            force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );                                                   
-                        }
+                            float2 p1 = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );
+                            float m1 = inOutCellBuffer[j].mass;
+                            force += GravityForce( p0, m0, p1, m1 );
+                        }                        
                     }
                 }
             }
+            */
+                    
+            int offset = 3;
+            int maxOffset = max(width,height);                
+            while( offset <= maxOffset )
+            {
+                int halfOffset = offset / 2;
             
-            offset *= 3;
-        }
+                for (int dy0 = -1; dy0 <= 1; dy0++)
+                {
+                    for (int dx0 = -1; dx0 <= 1; dx0++)
+                    {                
+                        if ( !(dy0 == 0 && dx0 == 0) )
+                        {
+                            int y1 = y0 + dy0 * offset;
+                            int x1 = x0 + dx0 * offset;
+                            
+                            int yMin = max( 0, y1 - halfOffset - 1 );
+                            int xMin = max( 0, x1 - halfOffset - 1 );                        
+                            int yMax = min( height - 1, y1 + halfOffset );
+                            int xMax = min( width - 1, x1 + halfOffset );
+                            
+                            if( yMin < yMax && xMin < xMax )
+                            {
+                                int iMinMin = yMin * width + xMin;
+                                int iMaxMin = yMin * width + xMax;
+                                int iMaxMax = yMax * width + xMax;
+                                int iMinMax = yMax * width + xMin;                                   
+                                                        
+                                float3 massSATSample = inOutMassSATBuffer[iMaxMax] -
+                                                       inOutMassSATBuffer[iMinMax] -                                                     
+                                                       inOutMassSATBuffer[iMaxMin] +
+                                                       inOutMassSATBuffer[iMinMin];
+                                      
+                                float virtualCellMass = massSATSample.x;
+                                float virtualCellWeight = massSATSample.x;                            
+                                float2 virtualCellPos = massSATSample.yz;
+                                if( virtualCellWeight > EPSILON )
+                                {
+                                    virtualCellPos = virtualCellPos / virtualCellWeight;
+                                }
+                                
+                                /* uncomment to turn off the effect of center-of-masses */
+                                /* 
+                                float lx = (xMin+1) * cellSize + cellSize / 2;
+                                float rx = xMax * cellSize + cellSize / 2;
+                                float ty = (yMin+1) * cellSize + cellSize / 2;
+                                float by = yMax * cellSize + cellSize / 2;
+                                
+                                virtualCellPos = ( float2(lx,ty) +
+                                                          float2(rx,ty) +
+                                                          float2(rx,by) +
+                                                          float2(lx,by) ) / 4; 
+                                */
+                                                         
+                                force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );                                                   
+                            }
+                        }
+                    }
+                }
                 
-        inOutCellBuffer[i].force = force;
+                offset *= 3;
+            }                    
+            inOutCellBuffer[i].force = force;
+        }
+        else
+        {
+            inOutCellBuffer[i].force = float2( 0, 0 );
+        }
     }
 }
 
@@ -361,62 +363,66 @@ void MassPropagationPrepass(uint3 id : SV_DispatchThreadID)
     int i = int(id.x);  
     
     if( i < width*height )
-    {
-        int y = i / width;
-        int x = i - y * width;
-        
-        float cellExtents = float2( cellSize, cellSize );
-        float cellHalfExtents = cellExtents / 2;
-        
-        //float2 cellOffset = inCellBuffer[i].vel * deltaTime;
-        float2 cellOffset = 0;
+    {                
         if( inCellBuffer[i].mass > EPSILON )
         {
-            float2 acceleration = inCellBuffer[i].force / inCellBuffer[i].mass; 
-            float4 state = float4( float2(0,0), inCellBuffer[i].vel );           
-            float4 a = EvaluateRK4( state, 0.0, float4( 0,0,0,0 ), acceleration );
-            float4 b = EvaluateRK4( state, deltaTime*0.5f, a, acceleration );
-            float4 c = EvaluateRK4( state, deltaTime*0.5f, b, acceleration );
-            float4 d = EvaluateRK4( state, deltaTime, c, acceleration );
+            int y = i / width;
+            int x = i - y * width;
+        
+            float2 cellExtents = float2( cellSize, cellSize );
+            float cellHalfExtents = cellExtents / 2;
             
-            float2 dPosDt = 1.0f / 6.0f * ( a.xy + 2.0f * ( b.xy + c.xy ) + d.xy );
-            float2 dVelDt = 1.0f / 6.0f * ( a.zw + 2.0f * ( b.zw + c.zw ) + d.zw );
+            //float2 cellOffset = inCellBuffer[i].vel * deltaTime;
             
-            cellOffset = dPosDt * deltaTime;
-            inCellBuffer[i].vel += dVelDt * deltaTime;
-        }         
-         
-        float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents + cellOffset;
-        float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
-        
-        float expansionVel = inCellBuffer[i].mass * density / (cellSize*cellSize);         
-        float expansion = ( expansionVel * deltaTime ) / 2;
-        cellRect += float4( -expansion, -expansion, expansion, expansion );
-        
-        inOutCellRectBuffer[i] = cellRect;
-        
-        int2 xyInf = floor( cellRect.xy / cellSize );
-        int2 xySup = floor( cellRect.zw / cellSize );
-        
-        int massPropagationStride = numMassPropagationIndices + 1;        
-        
-        for (int y1 = xyInf.y; y1 <= xySup.y; y1++)
-        {
-            for (int x1 = xyInf.x; x1 <= xySup.x; x1++)
+            float2 cellOffset = 0;
+            if( inCellBuffer[i].mass > EPSILON )
             {
-                int j = y1 * width + x1;
+                float2 acceleration = inCellBuffer[i].force / inCellBuffer[i].mass; 
+                float4 state = float4( float2(0,0), inCellBuffer[i].vel );           
+                float4 a = EvaluateRK4( state, 0.0, float4( 0,0,0,0 ), acceleration );
+                float4 b = EvaluateRK4( state, deltaTime*0.5f, a, acceleration );
+                float4 c = EvaluateRK4( state, deltaTime*0.5f, b, acceleration );
+                float4 d = EvaluateRK4( state, deltaTime, c, acceleration );
                 
-                int massPropagationOffset = j * massPropagationStride;
+                float2 dPosDt = 1.0f / 6.0f * ( a.xy + 2.0f * ( b.xy + c.xy ) + d.xy );
+                float2 dVelDt = 1.0f / 6.0f * ( a.zw + 2.0f * ( b.zw + c.zw ) + d.zw );
                 
-                int writeIndex;
-                InterlockedAdd( inOutMassPropagationBuffer[massPropagationOffset], 1, writeIndex );
-                
-                if( writeIndex < numMassPropagationIndices )
+                cellOffset = dPosDt * deltaTime;
+                inCellBuffer[i].vel += dVelDt * deltaTime;
+            }         
+             
+            float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents + cellOffset;
+            float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
+            
+            float expansionVel = inCellBuffer[i].mass * density / (cellSize*cellSize);         
+            float expansion = ( expansionVel * deltaTime ) / 2;
+            cellRect += float4( -expansion, -expansion, expansion, expansion );
+            
+            inOutCellRectBuffer[i] = cellRect;
+            
+            int2 xyInf = floor( cellRect.xy / cellSize );
+            int2 xySup = floor( cellRect.zw / cellSize );
+            
+            int massPropagationStride = numMassPropagationIndices + 1;        
+            
+            for (int y1 = xyInf.y; y1 <= xySup.y; y1++)
+            {
+                for (int x1 = xyInf.x; x1 <= xySup.x; x1++)
                 {
-                    inOutMassPropagationBuffer[massPropagationOffset+writeIndex+1] = i;
+                    int j = y1 * width + x1;
+                    
+                    int massPropagationOffset = j * massPropagationStride;
+                    
+                    int writeIndex;
+                    InterlockedAdd( inOutMassPropagationBuffer[massPropagationOffset], 1, writeIndex );
+                    
+                    if( writeIndex < numMassPropagationIndices )
+                    {
+                        inOutMassPropagationBuffer[massPropagationOffset+writeIndex+1] = i;
+                    }
                 }
             }
-        }                   
+        }
     }
 }
 
