@@ -149,6 +149,56 @@ half4 MassToColor(float mass)
     }
 }
 
+half4 NumPropagationIndicesToColor(int count)
+{
+    const half4 Color0 = half4( 0,0,0,0 );
+    const half4 Color1 = half4( 0.0625, 0, 0.5, 1 );
+    const half4 Color2 = half4( 0,0,1,1 );
+    const half4 Color3 = half4( 0,0.25,0.75,1 );
+    const half4 Color4 = half4( 0,1,0,1 );
+    const half4 Color5 = half4( 1,1,0,1 );
+    const half4 Color6 = half4( 1,0.5,0,1 );
+    const half4 Color7 = half4( 1,0,0,1 );
+    const half4 Color8 = half4( 1,1,1,1 );
+
+    if( count == 0 )
+    {
+        return Color0;
+    }
+    else if( count == 1 )
+    {
+        return Color1;
+    }
+    else if( count == 2 )
+    {
+        return Color2;
+    }
+    else if( count == 3 )
+    {
+        return Color3;
+    }
+    else if( count == 4 )
+    {
+        return Color4;
+    }
+    else if( count == 5 )
+    {
+        return Color5;
+    }
+    else if( count == 6 )
+    {
+        return Color6;
+    }
+    else if( count <= numMassPropagationIndices )
+    {
+        return Color7;
+    }
+    else 
+    {
+        return Color8;
+    }
+}
+
 float Angle(float2 from, float2 to)
 {
     float fromSqrMag = from.x*from.x + from.y*from.y;
@@ -370,7 +420,7 @@ void MassPropagationPrepass(uint3 id : SV_DispatchThreadID)
             int x = i - y * width;
         
             float2 cellExtents = float2( cellSize, cellSize );
-            float cellHalfExtents = cellExtents / 2;
+            float2 cellHalfExtents = cellExtents / 2;
             
             //float2 cellOffset = inCellBuffer[i].vel * deltaTime;
             
@@ -432,21 +482,12 @@ void MassPropagationPrepass(uint3 id : SV_DispatchThreadID)
 
 float4 IntersectRects(float4 rect1, float4 rect2)  
 {
-    float xInf1 = rect1.x;
-    float yInf1 = rect1.y;
-    float xSup1 = rect1.z;
-    float ySup1 = rect1.w;
-    float xInf2 = rect2.x;
-    float yInf2 = rect2.y;
-    float xSup2 = rect2.z;
-    float ySup2 = rect2.w;
-        
     return float4
     (
-        min( max( xInf1, xInf2 ), xSup2 ),
-        min( max( yInf1, yInf2 ), ySup2 ),
-        max( min( xSup1, xSup2 ), xInf2 ),
-        max( min( ySup1, ySup2 ), yInf2 )
+        min( max( rect1.x, rect2.x ), rect2.z ),
+        min( max( rect1.y, rect2.y ), rect2.w ),
+        max( min( rect1.z, rect2.z ), rect2.x ),
+        max( min( rect1.w, rect2.w ), rect2.y )
     );
 }
 
@@ -462,51 +503,60 @@ void MassPropagationPass(uint3 id : SV_DispatchThreadID)
     
     if( i < width*height )
     {
-        int y = i / width;
-        int x = i - y * width;
-        
-        float cellExtents = float2( cellSize, cellSize );
-        float cellHalfExtents = cellExtents / 2;
-        
-        float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents;
-        float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
-        
-        float cellMass = 0;
-        float2 cellMassVel = float2( 0, 0 ); 
-        
         int massPropagationStride = numMassPropagationIndices + 1;
         int massPropagationOffset = i * massPropagationStride;
-        
         int count = min( inOutMassPropagationBuffer[massPropagationOffset], numMassPropagationIndices );
-        for (int j = 0; j <= count; j++)
+        if( count > 0 )
         {
-            int k = inOutMassPropagationBuffer[massPropagationOffset+j+1];            
-            
-            float4 otherCellRect = inOutCellRectBuffer[k];            
-            float4 intersectionRect = IntersectRects( cellRect, otherCellRect );
-            float intersectionRectArea = RectArea( intersectionRect );
-            
-            if( intersectionRectArea > EPSILON )
-            {            
-                float otherCellRectArea = RectArea( otherCellRect );
-                float intersectionRectAreaRatio = intersectionRectArea / otherCellRectArea;
-                float deltaMass = intersectionRectAreaRatio * inCellBuffer[k].mass;
-                cellMass += deltaMass;
-                cellMassVel += deltaMass * inCellBuffer[k].vel;
-            } 
-        }
+            int y = i / width;
+            int x = i - y * width;
         
-        if( cellMass > EPSILON && i != 0 ) 
-        {
-            outCellBuffer[i].mass = cellMass;
-            outCellBuffer[i].vel = cellMassVel / cellMass;
+            float2 cellExtents = float2( cellSize, cellSize );
+            float2 cellHalfExtents = cellExtents / 2;
+        
+            float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents;
+            float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
+        
+            float cellMass = 0;
+            float2 cellMassVel = float2( 0, 0 );
+             
+            for (int j = 0; j <= count; j++)
+            {
+                int k = inOutMassPropagationBuffer[massPropagationOffset+j+1];            
+            
+                float4 otherCellRect = inOutCellRectBuffer[k];            
+                float4 intersectionRect = IntersectRects( cellRect, otherCellRect );
+                float intersectionRectArea = RectArea( intersectionRect );
+            
+                if( intersectionRectArea > EPSILON )
+                {            
+                    float otherCellRectArea = RectArea( otherCellRect );
+                    float intersectionRectAreaRatio = intersectionRectArea / otherCellRectArea;
+                    float deltaMass = intersectionRectAreaRatio * inCellBuffer[k].mass;
+                    cellMass += deltaMass;
+                    cellMassVel += deltaMass * inCellBuffer[k].vel;
+                } 
+            }
+        
+            if( cellMass > EPSILON && i != 0 ) 
+            {
+                outCellBuffer[i].mass = cellMass;
+                outCellBuffer[i].vel = cellMassVel / cellMass;
+                outCellBuffer[i].force = inCellBuffer[i].force;
+            }
+            else
+            {
+                outCellBuffer[i].mass = 0;
+                outCellBuffer[i].vel = float2( 0, 0 );
+                outCellBuffer[i].force = float2( 0, 0 );
+            }            
         }
         else
         {
             outCellBuffer[i].mass = 0;
             outCellBuffer[i].vel = float2( 0, 0 );
-        }
-        outCellBuffer[i].force = inCellBuffer[i].force; 
+            outCellBuffer[i].force = float2( 0, 0 );
+        } 
     }
 }
 
@@ -758,6 +808,30 @@ void DrawForces(uint3 id : SV_DispatchThreadID)
         // legend        
         const float LegendScale = 0.25f;        
         renderTexture[xy] = DrawLegend( x, y, LegendScale, renderTexture[xy] );
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawPropagation
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawPropagation(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+        
+    if( i < width*height )
+    {        
+        int y = i / width;
+        int x = i - y * width;        
+        
+        int2 xy = int2( x,y );
+        
+        int massPropagationStride = numMassPropagationIndices + 1;
+        int massPropagationOffset = i * massPropagationStride;
+        int count = inOutMassPropagationBuffer[massPropagationOffset];
+                       
+        renderTexture[xy] = NumPropagationIndicesToColor( count );
     }
 }
 

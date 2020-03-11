@@ -25,6 +25,7 @@ public enum DisplayMode
 	Momentums,
 	Forces,
 	MassSAT,
+	Propagation
 };
 
 public enum ScopeDisplay
@@ -261,6 +262,11 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 		DisplayMode = DisplayMode.MassSAT;
 	}
 	
+	public void OnShowPropagation(string arg)
+	{
+		DisplayMode = DisplayMode.Propagation;
+	}
+	
 	public void Play(string arg)
 	{
 		_pause = false;
@@ -308,6 +314,7 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 		int drawForces = _computeShader.FindKernel( "DrawForces" );
 		int drawMassSAT = _computeShader.FindKernel( "DrawMassSAT" );
 		int drawSyntheticImage = _computeShader.FindKernel( "DrawSyntheticImage" );
+		int drawPropagation = _computeShader.FindKernel( "DrawPropagation" );
 		int numberOfGroups = Mathf.CeilToInt( (float)(_width*_height) / GPUGroupSize );
 
 		switch (DisplayMode)
@@ -336,6 +343,11 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 				_computeShader.SetBuffer(drawMassSAT, "inOutMassSATBuffer", _inMassSATBuffer);
 				_computeShader.SetTexture(drawMassSAT, "renderTexture", _gridRenderTexture);
 				_computeShader.Dispatch(drawMassSAT, numberOfGroups, 1, 1);
+				break;
+			case DisplayMode.Propagation:
+				_computeShader.SetBuffer(drawPropagation, "inOutMassPropagationBuffer", _inOutMassPropagationBuffer);
+				_computeShader.SetTexture(drawPropagation, "renderTexture", _gridRenderTexture);
+				_computeShader.Dispatch(drawPropagation, numberOfGroups, 1, 1);
 				break;
 			default:
 				break;
