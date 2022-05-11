@@ -54,8 +54,10 @@ public partial class CellularGravity : MonoBehaviour
             _cells[i].vel = new Vector2( _cells[i].vel.y, -_cells[i].vel.x );
             _cells[i].vel += Vector2.Lerp( Vector2.zero, (c-p).normalized, Vector2.Distance(c,p) / (_width / 2 * CellSize) );
             _cells[i].vel = Vector2.Lerp(Vector2.zero, _cells[i].vel, Vector2.Distance(c, p) / (_width / 2 * CellSize));
-            
-            _cells[i].mass = InitialMassMultiplier * massPixels[i].r * Random.Range(InitialMassBias.x,InitialMassBias.y);
+
+            Color pixel = massPixels[i];
+            float lum = (pixel.r + pixel.g + pixel.b) / 3.0f;  
+            _cells[i].mass = InitialMassMultiplier * lum * Random.Range(InitialMassBias.x,InitialMassBias.y);
         }
 
         _inCellBuffer.SetData(_cells);
@@ -175,7 +177,7 @@ public partial class CellularGravity : MonoBehaviour
         TotalMass.text = totalMass.ToString("F5");
         
         _computeShader.SetFloat("deltaTime", deltaTime);
-        
+
         // momentum transfer with local expansion
         
         _computeShader.SetInt( "numMassPropagationIndices", NumMassPropagationIndices );
@@ -187,6 +189,7 @@ public partial class CellularGravity : MonoBehaviour
         _computeShader.SetBuffer(_massPropagationPrepass, "inCellBuffer", _inCellBuffer);
         _computeShader.Dispatch(_massPropagationPrepass, numberOfCellGroups, 1, 1);
         
+
         _computeShader.SetBuffer(_massPropagationPass, "inOutMassPropagationBuffer", _inOutMassPropagationBuffer);
         _computeShader.SetBuffer(_massPropagationPass, "inOutCellRectBuffer", _inOutCellRectBuffer);
         _computeShader.SetBuffer(_massPropagationPass, "inCellBuffer", _inCellBuffer);

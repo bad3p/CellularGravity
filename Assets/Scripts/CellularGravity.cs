@@ -133,11 +133,6 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 			}
 		}
 	}
-	
-	private int MassPropagationBufferStride
-	{
-		get { return (1 + NumMassPropagationIndices) * 4; }
-	}
 
 	private Texture2D GetReadableTexture(Texture2D src, int width, int height)
 	{
@@ -219,7 +214,7 @@ public partial class CellularGravity : MonoBehaviour, IPointerClickHandler
 		_outMassSATBuffer = new ComputeBuffer( _cells.Length, sizeof(float) * 3 );
 		_outRowStatsBuffer = new ComputeBuffer( _rowStats.Length, RowStats.SizeOf );
 		_inOutCellRectBuffer = new ComputeBuffer(_cells.Length, sizeof(float) * 4);
-		_inOutMassPropagationBuffer = new ComputeBuffer(_cells.Length, MassPropagationBufferStride);
+		_inOutMassPropagationBuffer = new ComputeBuffer(_cells.Length * (1 + NumMassPropagationIndices), sizeof(int));
 		_computeShader = Resources.Load<ComputeShader>( "CellularGravity" );
 
 		FindKernels( _computeShader );
