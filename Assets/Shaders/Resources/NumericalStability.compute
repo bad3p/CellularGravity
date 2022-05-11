@@ -1,0 +1,292 @@
+﻿
+#define GROUPSIZE 128
+
+#define EPSILON 5.96e-08
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+RWStructuredBuffer<float> inImageBuffer32;
+RWStructuredBuffer<float3> inSATBuffer32;
+RWStructuredBuffer<float3> outSATBuffer32;
+
+RWStructuredBuffer<double> inImageBuffer64;
+RWStructuredBuffer<double3> inSATBuffer64;
+RWStructuredBuffer<double3> outSATBuffer64;
+
+RWTexture2D<half4> inRenderTexture;
+RWTexture2D<half4> outRenderTexture;
+
+RWStructuredBuffer<double> statsBuffer;
+
+int width;
+int height;
+int satSampleSize;
+int numIterations;
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+half4 ValueToColor(float Value)
+{
+    const float Value0 = 0.00001;
+    const float Value1 = 0.0001;
+    const float Value2 = 0.001;
+    const float Value3 = 0.01;
+    const float Value4 = 0.1;
+    const float Value5 = 1.0;
+    const float Value6 = 10.0;
+    const float Value7 = 100.0;
+    
+    const half4 VacuumColor = half4( 0,0,0,0 );
+    const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
+    const half4 Color1 = half4( 0,0,1,1 );
+    const half4 Color2 = half4( 0,0.25,0.75,1 );
+    const half4 Color3 = half4( 0,1,0,1 );
+    const half4 Color4 = half4( 1,1,0,1 );
+    const half4 Color5 = half4( 1,0.5,0,1 );
+    const half4 Color6 = half4( 1,0,0,1 );
+    const half4 Color7 = half4( 1,1,1,1 );
+    
+    if( Value < Value0 )
+    {
+        return lerp( VacuumColor, Color0, Value / Value0 );   
+    } 
+    else if( Value < Value1 )
+    {
+        return lerp( Color0, Color1, (Value-Value0) / (Value1-Value0) );
+    }
+    else if( Value < Value2 )
+    {
+        return lerp( Color1, Color2, (Value-Value1) / (Value2-Value1) );
+    }
+    else if( Value < Value3 )
+    {
+        return lerp( Color2, Color3, (Value-Value2) / (Value3-Value2) );
+    }
+    else if( Value < Value4 )
+    {
+        return lerp( Color3, Color4, (Value-Value3) / (Value4-Value3) );
+    }
+    else if( Value < Value5 )
+    {
+        return lerp( Color4, Color5, (Value-Value4) / (Value5-Value4) );
+    }
+    else if( Value < Value6 )
+    {
+        return lerp( Color5, Color6, (Value-Value5) / (Value6-Value5) );
+    }
+    else
+    {
+        return lerp( Color6, Color7, (Value-Value6) / (Value7-Value6) );
+    }
+}
+
+float Angle(float2 from, float2 to)
+{
+    float fromSqrMag = from.x*from.x + from.y*from.y;
+    float toSqrMag = to.x*to.x + to.y*to.y;
+
+    float num = sqrt( fromSqrMag * toSqrMag);
+    if ( num < 5.96E-08 )
+    {
+        return 0.0f;
+    }
+    return acos( clamp( dot(from, to) / num, -1.0, 1.0) ) * 57.29578;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel InitSATBuffers
+
+[numthreads(GROUPSIZE,1,1)]
+void InitSATBuffers(uint3 id : SV_DispatchThreadID)
+{ 
+    int i = int(id.x);
+    
+    int length = width * height; 
+        
+    if( i < length )
+    {
+        int y = i / width;
+        int x = i - y * width;
+          
+        outSATBuffer32[i] = float3( inImageBuffer32[i], float2( x, y ) * inImageBuffer32[i] );
+        outSATBuffer64[i] = double3( inImageBuffer64[i], double2( x, y ) * inImageBuffer64[i] );
+    }    
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel TransposeSATBuffers
+
+[numthreads(GROUPSIZE,1,1)]
+void TransposeSATBuffers(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+    
+    if( i < width*height )
+    {
+        int y = i / width;
+        int x = i - y * width;
+        int j = x * height + y; 
+    
+        outSATBuffer32[i] = inSATBuffer32[j];
+        outSATBuffer64[i] = inSATBuffer64[j];
+    }    
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ComputeSAT
+
+[numthreads(GROUPSIZE,1,1)]
+void ComputeSAT(uint3 id : SV_DispatchThreadID)
+{
+    int y = int(id.x);
+    
+    if (y < height)
+    {
+        int index = y*width;
+        
+        float3 acc32 = inSATBuffer32[index];
+        double3 acc64 = inSATBuffer64[index];
+         
+        outSATBuffer32[index] = acc32;
+        outSATBuffer64[index] = acc64;        
+        index++;
+         
+        for( int x=1; x<width; x++, index++)
+        {
+            acc32 += inSATBuffer32[index];
+            acc64 += inSATBuffer64[index];
+            
+            outSATBuffer32[index] = acc32;
+            outSATBuffer64[index] = acc64;
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawSATDifference
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawSATDifference(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < width * height )
+    {
+        int y = i / width;        
+        int x = i - y * width;
+        int2 xy = int2( x,y );
+
+        int yMin = max( 0, y - satSampleSize/2 - 1 );
+        int xMin = max( 0, x - satSampleSize/2 - 1 );                        
+        int yMax = min( height - 1, y + satSampleSize/2 );
+        int xMax = min( width - 1, x + satSampleSize/2 );
+        
+        int iMinMin = yMin * width + xMin;
+        int iMaxMin = yMin * width + xMax;
+        int iMaxMax = yMax * width + xMax;
+        int iMinMax = yMax * width + xMin;
+        
+        float3 satSample32 = inSATBuffer32[iMaxMax] -
+                             inSATBuffer32[iMinMax] -                                                     
+                             inSATBuffer32[iMaxMin] +
+                             inSATBuffer32[iMinMin];                           
+                             
+        double3 satSample64 = inSATBuffer64[iMaxMax] -
+                              inSATBuffer64[iMinMax] -                                                     
+                              inSATBuffer64[iMaxMin] +
+                              inSATBuffer64[iMinMin];
+        
+        float value32 = satSample32.x;
+        float weight32 = satSample32.x;
+        float2 pos32 = satSample32.yz;
+        if( weight32 > EPSILON )
+        {
+            pos32 /= weight32;
+        }
+                              
+        double value64 = satSample64.x;
+        double weight64 = satSample64.x;
+        double2 pos64 = satSample64.yz;
+        if( weight64 > EPSILON )
+        {
+            pos64 /= weight64;
+        }
+        
+        double valueDiff = value64 - double( value32 ); 
+        double2 posDiff = pos64 - double2( pos32 );
+         
+        double posDiffPolar = abs( Angle( normalize( pos32 - xy ), normalize(pos64 - xy)) );                                                                                                
+                
+        outRenderTexture[xy] = ValueToColor( abs( length( posDiff ) ) );    
+        //outRenderTexture[xy] = ValueToColor( abs( valueDiff ) );
+        //outRenderTexture[xy] = ValueToColor( abs( posDiffPolar ) );
+        
+        // worst fragment
+        if( x == width - satSampleSize / 2 && y == height - satSampleSize / 2 )
+        {
+            statsBuffer[numIterations*2] = abs( length( posDiff ) );
+            statsBuffer[numIterations*2+1] = abs( valueDiff );             
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ResetRenderTexture
+
+[numthreads(GROUPSIZE,1,1)]
+void ResetRenderTexture(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < width * height )
+    {
+        int y = i / width;        
+        int x = i - y * width;
+        int2 xy = int2( x,y );
+
+        outRenderTexture[xy] = half4( 0, 0, 0, 0 );      
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel IntegrateIteration
+
+[numthreads(GROUPSIZE,1,1)]
+void IntegrateIteration(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < width * height )
+    {
+        int y = i / width;        
+        int x = i - y * width;
+        int2 xy = int2( x,y );
+
+        outRenderTexture[xy] += inRenderTexture[xy];      
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawResult
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawResult(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < width * height )
+    {
+        int y = i / width;        
+        int x = i - y * width;
+        int2 xy = int2( x,y );
+
+        outRenderTexture[xy] = inRenderTexture[xy] / numIterations;      
+    }
+}

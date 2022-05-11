@@ -1,110 +1,66 @@
 ﻿
 #define GROUPSIZE 128
 
+#define EPSILON 5.96e-08
+
 //////////////////////////////////////////////////////////////////////////////////////
 
 struct Cell
 {
     float  mass;
-	float4 color;
-	float2 vel;
-	float2 pos;		
+	float2 vel;		
 	float2 force;
 };
 
-struct Node
+struct RowStats
 {
-	float  mass;
-	float2 pos;
-	float  maxMass;
-    float  maxVel;
-    float2 inf;
-    float2 sup;
-};
-
-struct Grid
-{
-    int start;
-    int length;
-    int width;
-    int height;
+    float maxMass;
+    float maxVel;
+    float totalMass;
 };
 
 RWStructuredBuffer<Cell> inCellBuffer;
 RWStructuredBuffer<Cell> outCellBuffer;
 RWStructuredBuffer<Cell> inOutCellBuffer;
-RWStructuredBuffer<Node> nodeBuffer;
-RWStructuredBuffer<Grid> gridBuffer;
-RWTexture2D<half4> renderTexture; 
+RWStructuredBuffer<RowStats> outRowStatsBuffer;
+RWStructuredBuffer<float3> inMassSATBuffer;
+RWStructuredBuffer<float3> outMassSATBuffer;
+RWStructuredBuffer<float3> inOutMassSATBuffer;
+RWStructuredBuffer<float4> inOutCellRectBuffer;
+RWStructuredBuffer<int> inOutMassPropagationBuffer;
+RWStructuredBuffer<float> filterWeights;
+RWTexture2D<half4> renderTexture;
+RWTexture2D<half4> inRenderTexture;
+RWTexture2D<half4> outRenderTexture; 
 
 float gravity;
 float cellSize;
 float cellArea;
 float deltaTime;
 float density;
-int numGrids;
-int gridIndex;
+int width;
+int height;
+int numMassPropagationIndices;
+int scopePosX;
+int scopePosY;
+int scopeWindowWidth;
+int scopeWindowHeight;
+int scopeCellResolution;
+int originalWidth;
+int originalHeight;
+int downsampledWidth;
+int downsampledHeight;
 
 //////////////////////////////////////////////////////////////////////////////////////
-
-float CellOffsetArea(float2 pos, float2 offset)
-{
-    float cellExtents = cellSize / 2;
-
-    float infX = pos.x - cellExtents;
-    float infY = pos.y - cellExtents;
-    float supX = pos.x + cellExtents;
-    float supY = pos.y + cellExtents;
-        
-    return (supX - infX) * abs(offset.y) + (supY - infY) * abs(offset.x) - abs(offset.x * offset.y);
-}
-    
-float CellOverlappingArea(float2 pos0, float2 pos1, float cellSize)
-{
-    float cellExtents = cellSize / 2;
-        
-    float left1 = pos0.x - cellExtents;
-    float right1 = pos0.x + cellExtents;
-    float top1 = pos0.y + cellExtents;
-    float bottom1 = pos0.y - cellExtents;
-		
-    float left2 = pos1.x - cellExtents;
-    float right2 = pos1.x + cellExtents;
-    float top2 = pos1.y + cellExtents;
-    float bottom2 = pos1.y - cellExtents;
-		
-    float xOverlap = max(0, min(right1, right2) - max(left1, left2));
-    float yOverlap = max(0, min(top1, top2) - max(bottom1, bottom2));
-    return xOverlap * yOverlap;
- }
- 
-float CellOverlappingArea(float2 pos0, float2 pos1, float cellSize0, float cellSize1)
-{
-    float cellExtents0 = cellSize0 / 2;
-    float cellExtents1 = cellSize1 / 2;
-        
-    float left1 = pos0.x - cellExtents0;
-    float right1 = pos0.x + cellExtents0;
-    float top1 = pos0.y + cellExtents0;
-    float bottom1 = pos0.y - cellExtents0;
-		
-    float left2 = pos1.x - cellExtents1;
-    float right2 = pos1.x + cellExtents1;
-    float top2 = pos1.y + cellExtents1;
-    float bottom2 = pos1.y - cellExtents1;
-		
-    float xOverlap = max(0, min(right1, right2) - max(left1, left2));
-    float yOverlap = max(0, min(top1, top2) - max(bottom1, bottom2));
-    return xOverlap * yOverlap;
- } 
  
  float2 GravityForce(float2 p0, float m0, float2 p1, float m1)
  {
     float2 dir = p1 - p0;
     float r = length(dir);
-    if (r > 0)
+    if (r > EPSILON )
     {
         dir *= 1.0f / r;
+        r = max( r, 1.0 ); // yep!  
         return dir * (m0 * m1 * gravity / ( r * r ));
     }
     else
@@ -113,567 +69,654 @@ float CellOverlappingArea(float2 pos0, float2 pos1, float cellSize0, float cellS
     } 
 }
 
-float MassContrubution(float2 virtualCellPos, int nodeIndex, float nodeSize, float nodeArea)
+float LogToLinear(float value, float minLog, float maxLog, float minLinear, float linearMultiplicator)
 {
-    float2 nodePos = nodeBuffer[nodeIndex].pos;
-    float overlappingArea = CellOverlappingArea( virtualCellPos, nodePos, nodeSize);
-    if (overlappingArea > 0)
+    if( value < minLog )
     {
-        return nodeBuffer[nodeIndex].mass * overlappingArea / nodeArea;
+        return lerp( 0.0, minLinear, value/minLog );
     }
     else
     {
-        return 0;
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel AccumulateCellMasses
-
-[numthreads(GROUPSIZE,1,1)]
-void AccumulateCellMasses(uint3 id : SV_DispatchThreadID)
-{
-    int nodeIndex = int(id.x);
-    
-    int nodeGridStart = gridBuffer[1].start;
-    int nodeGridLength = gridBuffer[1].length;
-    
-    if( nodeIndex < nodeGridLength )
-    {   
-        int nodeGridWidth = gridBuffer[1].width;        
-        int cellGridWidth = gridBuffer[0].width;
-        int cellGridStart = gridBuffer[0].start; 
-    
-        int i = nodeIndex;  
-    
-        int y1 = i / nodeGridWidth;
-        int x1 = i - y1 * nodeGridWidth;
-
-        float mass = 0;
-        float maxMass = 0;
-        float maxVel = 0;
-        float2 inf = float2( gridBuffer[0].width, gridBuffer[0].height );
-        float2 sup = float2( 0, 0 );
-        float2 pos = float2( 0,0 );
-                
-        for (int dy = 0; dy <= 2; dy++) 
-        {
-            for (int dx = 0; dx <= 2; dx++)
-            {
-                int y0 = y1 * 3 + dy;
-                int x0 = x1 * 3 + dx;
-                int j = y0 * cellGridWidth + x0;
-                int cellIndex = j + cellGridStart;
-                mass += inOutCellBuffer[cellIndex].mass;
-                maxMass = max( maxMass, inOutCellBuffer[cellIndex].mass );
-                maxVel = max( maxVel, length(inOutCellBuffer[cellIndex].vel) );
-                if( inOutCellBuffer[cellIndex].mass > 0.01 )
-                { 
-                    inf.x = min( inf.x, x0 );
-                    inf.y = min( inf.y, y0 );
-                    sup.x = max( sup.x, x0 );
-                    sup.y = max( sup.y, y0 );
-                }
-                if( dx == 1 && dy == 1 )
-                {
-                    pos = inOutCellBuffer[cellIndex].pos;
-                }                  
-            }
-        }
-    
-        nodeIndex += nodeGridStart;            
-        nodeBuffer[nodeIndex].mass = mass;
-        nodeBuffer[nodeIndex].pos = pos;
-        nodeBuffer[nodeIndex].maxMass = maxMass;
-        nodeBuffer[nodeIndex].maxVel = maxVel;
-        nodeBuffer[nodeIndex].inf = inf;
-        nodeBuffer[nodeIndex].sup = sup;
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel AccumulateNodeMasses
-
-[numthreads(GROUPSIZE,1,1)]
-void AccumulateNodeMasses(uint3 id : SV_DispatchThreadID)
-{
-    int nodeIndex = int(id.x);
-    
-    int nodeGridStart = gridBuffer[gridIndex].start;
-    int nodeGridLength = gridBuffer[gridIndex].length;
-    
-    if( nodeIndex < nodeGridLength )
-    {   
-        int nodeGridWidth = gridBuffer[gridIndex].width;        
-        int cellGridWidth = gridBuffer[gridIndex-1].width;
-        int cellGridStart = gridBuffer[gridIndex-1].start; 
-    
-        int i = nodeIndex;  
-    
-        int y1 = i / nodeGridWidth;
-        int x1 = i - y1 * nodeGridWidth;
-
-        float mass = 0;
-        float maxMass = 0;
-        float maxVel = 0;
-        float2 inf = float2( gridBuffer[0].width, gridBuffer[0].height );
-        float2 sup = float2( 0, 0 );
-        float2 pos = float2( 0,0 );        
+        float logValue0 = minLog;
+        float logValue1 = minLog * 10;
+        float linearValue0 = minLinear;
+        float linearValue1 = minLinear * linearMultiplicator;
         
-        for (int dy = 0; dy <= 2; dy++) 
+        while( value > logValue1 && logValue1 * 10 < maxLog )
         {
-            for (int dx = 0; dx <= 2; dx++)
-            {
-                int y0 = y1 * 3 + dy;
-                int x0 = x1 * 3 + dx;
-                int j = y0 * cellGridWidth + x0;
-                int cellIndex = j + cellGridStart;
-                mass += nodeBuffer[cellIndex].mass;
-                maxMass = max( maxMass, nodeBuffer[cellIndex].maxMass );
-                maxVel = max( maxVel, nodeBuffer[cellIndex].maxVel );
-                inf.x = min( inf.x, nodeBuffer[cellIndex].inf.x );
-                inf.y = min( inf.y, nodeBuffer[cellIndex].inf.y );
-                sup.x = max( sup.x, nodeBuffer[cellIndex].sup.x );
-                sup.y = max( sup.y, nodeBuffer[cellIndex].sup.y );
-                
-                if( dx == 1 && dy == 1 )
-                {
-                    pos = nodeBuffer[cellIndex].pos;
-                }                 
-            }
+            logValue0 = logValue1;
+            logValue1 *= 10;
+            linearValue0 = linearValue1;
+            linearValue1 *= linearMultiplicator;
         }
         
-        nodeIndex += nodeGridStart;
-        nodeBuffer[nodeIndex].mass = mass;
-        nodeBuffer[nodeIndex].pos = pos;
-        nodeBuffer[nodeIndex].maxMass = maxMass;
-        nodeBuffer[nodeIndex].maxVel = maxVel;
-        nodeBuffer[nodeIndex].inf = inf;
-        nodeBuffer[nodeIndex].sup = sup;
+        return lerp( linearValue0, linearValue1, (value - logValue0)/(logValue1 - logValue0) );
+    }  
+}
+
+half4 MassToColor(float mass)
+{
+    const float Mass0 = 0.0001;
+    const float Mass1 = 0.001;
+    const float Mass2 = 0.01;
+    const float Mass3 = 0.1;
+    const float Mass4 = 1;
+    const float Mass5 = 10;
+    const float Mass6 = 100;
+    const float Mass7 = 1000;
+    
+    const half4 VacuumColor = half4( 0,0,0,0 );
+    const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
+    const half4 Color1 = half4( 0,0,1,1 );
+    const half4 Color2 = half4( 0,0.25,0.75,1 );
+    const half4 Color3 = half4( 0,1,0,1 );
+    const half4 Color4 = half4( 1,1,0,1 );
+    const half4 Color5 = half4( 1,0.5,0,1 );
+    const half4 Color6 = half4( 1,0,0,1 );
+    const half4 Color7 = half4( 1,1,1,1 );
+    
+    if( mass < Mass0 )
+    {
+        return lerp( VacuumColor, Color0, mass / Mass0 );   
+    } 
+    else if( mass < Mass1 )
+    {
+        return lerp( Color0, Color1, (mass-Mass0) / (Mass1-Mass0) );
+    }
+    else if( mass < Mass2 )
+    {
+        return lerp( Color1, Color2, (mass-Mass1) / (Mass2-Mass1) );
+    }
+    else if( mass < Mass3 )
+    {
+        return lerp( Color2, Color3, (mass-Mass2) / (Mass3-Mass2) );
+    }
+    else if( mass < Mass4 )
+    {
+        return lerp( Color3, Color4, (mass-Mass3) / (Mass4-Mass3) );
+    }
+    else if( mass < Mass5 )
+    {
+        return lerp( Color4, Color5, (mass-Mass4) / (Mass5-Mass4) );
+    }
+    else if( mass < Mass6 )
+    {
+        return lerp( Color5, Color6, (mass-Mass5) / (Mass6-Mass5) );
+    }
+    else
+    {
+        return lerp( Color6, Color7, (mass-Mass6) / (Mass7-Mass6) );
+    }
+}
+
+half4 NumPropagationIndicesToColor(int count)
+{
+    const half4 Color0 = half4( 0,0,0,0 );
+    const half4 Color1 = half4( 0.0625, 0, 0.5, 1 );
+    const half4 Color2 = half4( 0,0,1,1 );
+    const half4 Color3 = half4( 0,0.25,0.75,1 );
+    const half4 Color4 = half4( 0,1,0,1 );
+    const half4 Color5 = half4( 1,1,0,1 );
+    const half4 Color6 = half4( 1,0.5,0,1 );
+    const half4 Color7 = half4( 1,0,0,1 );
+    const half4 Color8 = half4( 1,1,1,1 );
+
+    if( count == 0 )
+    {
+        return Color0;
+    }
+    else if( count == 1 )
+    {
+        return Color1;
+    }
+    else if( count == 2 )
+    {
+        return Color2;
+    }
+    else if( count == 3 )
+    {
+        return Color3;
+    }
+    else if( count == 4 )
+    {
+        return Color4;
+    }
+    else if( count == 5 )
+    {
+        return Color5;
+    }
+    else if( count == 6 )
+    {
+        return Color6;
+    }
+    else if( count <= numMassPropagationIndices )
+    {
+        return Color7;
+    }
+    else 
+    {
+        return Color8;
+    }
+}
+
+float Angle(float2 from, float2 to)
+{
+    float fromSqrMag = from.x*from.x + from.y*from.y;
+    float toSqrMag = to.x*to.x + to.y*to.y;
+
+    float num = sqrt( fromSqrMag * toSqrMag);
+    if ( num < 5.96E-08 )
+    {
+        return 0.0f;
+    }
+    return acos( clamp( dot(from, to) / num, -1.0, 1.0) ) * 57.29578;
+}
+
+float Angle360(float2 from, float2 to)
+{
+    float signedAngle = Angle(from, to) * sign( from.x * to.y - from.y * to.x);
+    if( signedAngle < 0 )
+    {
+        return 360 + signedAngle;
+    }
+    else
+    {
+        return signedAngle;
+    }
+}
+
+float3 HSV2RGB(float3 c)
+{
+    float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+half4 DrawLegend(int x, int y, float legendScale, half4 pixelValue)
+{
+    float2 uv = float2( x * 1.0 / width, y * 1.0 / height );
+    if( uv.x < legendScale && uv.y < legendScale )
+    {
+        float2 uvc = float2( legendScale/2, legendScale/2 );
+        float2 duv = uv - uvc;
+        float duvMag = length(duv);
+        duv = normalize(duv);
+        if( duvMag <= legendScale/2 )
+        {
+            float hue = Angle360( duv, float2(1,0) ) / 360;
+            float value = duvMag / (legendScale/2);
+            float sqrtValue = sqrt(value);
+            float easing = smoothstep( 0.5, 0.6, value ) * ( 1.0 - smoothstep( 0.9, 1.0, value ) );
+                
+            return lerp( pixelValue, half4( HSV2RGB( float3(hue,1,sqrtValue) ), 1 ), value * easing ); 
+        }
+        else
+        {
+            return pixelValue;
+        }   
+    }
+    else
+    {
+        return pixelValue;
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel ComputeGravityForce
+#pragma kernel ComputeGravityForceWithSAT
 
 [numthreads(GROUPSIZE,1,1)]
-void ComputeGravityForce(uint3 id : SV_DispatchThreadID)
+void ComputeGravityForceWithSAT(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
     
-    int length0 = gridBuffer[0].length;
-    
-    if( i < length0 )
-    {     
-        int width0 = gridBuffer[0].width;
-        int height0 = gridBuffer[0].height;
-                     
-        int y0 = i / width0;
-        int x0 = i - y0 * width0;
-
-        float2 p0 = inOutCellBuffer[i].pos;
+    if( i < width * height )
+    {        
         float m0 = inOutCellBuffer[i].mass;
-
-        float2 force = float2( 0, 0 );
         
-        for (int dy0 = -1; dy0 <= 1; dy0++)
+        if( m0 > EPSILON )
         {
-            for (int dx0 = -1; dx0 <= 1; dx0++)
-            {
-                if ( !(dy0 == 0 && dx0 == 0) )
-                {
-                    int y1 = y0 + dy0;
-                    int x1 = x0 + dx0;
-                        
-                    if (x1 >= 0 && x1 < width0 && y1 >= 0 && y1 < height0)
-                    {
-                        int j = y1 * width0 + x1;
-                        
-                        float2 p1 = inOutCellBuffer[j].pos;
-                        float m1 = inOutCellBuffer[j].mass;
-                        force += GravityForce( p0, m0, p1, m1 );
-                    }                        
-                }
-            }
-        }
+            int y0 = i / width;
+            int x0 = i - y0 * width;
         
-        for( int k=1; k<numGrids; k++ )
-        {
-            int startK = gridBuffer[k].start;
-            int lengthK = gridBuffer[k].length;
-            int widthK = gridBuffer[k].width;
-            int heightK = gridBuffer[k].height;        
-
-            int cellScale = width0 / widthK;
-            float cellSizeK = cellSize * cellScale;
-            float cellAreaK = cellSizeK * cellSizeK; 
+            float2 p0 = float2( x0 * cellSize + cellSize / 2, y0 * cellSize + cellSize / 2 );
+        
+            float2 force = float2( 0, 0 );
             
+            /* this is doubtful, considering mass propagation between neighbor cells */
+            /*                    
             for (int dy0 = -1; dy0 <= 1; dy0++)
             {
                 for (int dx0 = -1; dx0 <= 1; dx0++)
                 {
                     if ( !(dy0 == 0 && dx0 == 0) )
                     {
-                        int y01 = y0 + dy0 * cellScale;
-                        int x01 = x0 + dx0 * cellScale;
-                        
-                        float2 virtualCellPos = float2( x01 * cellSize + cellSize/2, y01 * cellSize + cellSize/2 );
-
-                        int y1N = (y01 - cellScale / 2) / cellScale;
-                        int y1P = (y01 + cellScale / 2) / cellScale;
-                        int x1N = (x01 - cellScale / 2) / cellScale;
-                        int x1P = (x01 + cellScale / 2) / cellScale;
-
-                        if (y1N == y1P && x1N == x1P)
-                        {                            
-                            if (x1N >= 0 && x1N < widthK && y1N >= 0 && y1N < heightK)
-                            {
-                                int j = y1N * widthK + x1N;
-                                float virtualCellMass = MassContrubution( virtualCellPos, j + startK, cellSizeK, cellAreaK );
-                                if( virtualCellMass > 0 )
-                                {
-                                    force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );
-                                }
-                            }
-                        }
-                        else if (y1N != y1P && x1N == x1P)
+                        int y1 = y0 + dy0;
+                        int x1 = x0 + dx0;
+                            
+                        if (x1 >= 0 && x1 < width && y1 >= 0 && y1 < height)
                         {
-                            float virtualCellMass = 0;                                                        
-                            if (x1N >= 0 && x1N < widthK && y1N >= 0 && y1N < heightK) 
-                            {
-                                int j1 = y1N * widthK + x1N;
-                                virtualCellMass += MassContrubution( virtualCellPos, j1 + startK, cellSizeK, cellAreaK );
-                            }                            
-                            if (x1N >= 0 && x1N < widthK && y1P >= 0 && y1P < heightK)
-                            {
-                                int j2 = y1P * widthK + x1N;
-                                virtualCellMass += MassContrubution( virtualCellPos, j2 + startK, cellSizeK, cellAreaK );
-                            }
-                            if( virtualCellMass > 0 )
-                            {
-                                force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );
-                            }
-                        }
-                        else if (y1N == y1P && x1N != x1P)
-                        {
-                            float virtualCellMass = 0;                                                        
-                            if (x1N >= 0 && x1N < widthK && y1N >= 0 && y1N < heightK)
-                            {
-                                int j1 = y1N * widthK + x1N;
-                                virtualCellMass += MassContrubution( virtualCellPos, j1 + startK, cellSizeK, cellAreaK );
-                            }                            
-                            if (x1P >= 0 && x1P < widthK && y1N >= 0 && y1N < heightK)
-                            {
-                                int j2 = y1N * widthK + x1P;
-                                virtualCellMass += MassContrubution( virtualCellPos, j2 + startK, cellSizeK, cellAreaK );
-                            }
-                            if( virtualCellMass > 0 )
-                            {
-                                force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );
-                            }                            
-                        }
-                        else
-                        {
-                            float virtualCellMass = 0;                                                        
-                            if (x1N >= 0 && x1N < widthK && y1N >= 0 && y1N < heightK)
-                            {
-                                int j1 = y1N * widthK + x1N;
-                                virtualCellMass += MassContrubution( virtualCellPos, j1 + startK, cellSizeK, cellAreaK );
-                            }                                                        
-                            if (x1N >= 0 && x1N < widthK && y1P >= 0 && y1P < heightK)
-                            {
-                                int j2 = y1P * widthK + x1N;
-                                virtualCellMass += MassContrubution( virtualCellPos, j2 + startK, cellSizeK, cellAreaK );
-                            }                                                        
-                            if (x1P >= 0 && x1P < widthK && y1P >= 0 && y1P < heightK)
-                            {
-                                int j3 = y1P * widthK + x1P;                            
-                                virtualCellMass += MassContrubution( virtualCellPos, j3 + startK, cellSizeK, cellAreaK );
-                            }                            
-                            if (x1P >= 0 && x1P < widthK && y1N >= 0 && y1N < heightK)
-                            {
-                                int j4 = y1N * widthK + x1P;
-                                virtualCellMass += MassContrubution( virtualCellPos, j4 + startK, cellSizeK, cellAreaK );
-                            }
-                            if( virtualCellMass > 0 )
-                            {
-                                force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );
-                            }                            
-                        }
-                    }
-                }
-            }
-        }
-                
-        inOutCellBuffer[i].force = force;
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel IntegrateVelocity
-
-[numthreads(GROUPSIZE,1,1)]
-void IntegrateVelocity(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);  
-    
-    if( i < gridBuffer[0].length )
-    {    
-        if (inOutCellBuffer[i].mass > 0)
-        {
-            inOutCellBuffer[i].vel += inOutCellBuffer[i].force / inOutCellBuffer[i].mass * deltaTime; 
-        }
-        else
-        {
-            inOutCellBuffer[i].vel = float2( 0, 0 ); 
-        }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-
-#pragma kernel MomentumTransfer
-
-[numthreads(GROUPSIZE,1,1)]
-void MomentumTransfer(uint3 id : SV_DispatchThreadID)
-{
-    int i = int(id.x);
-    
-    int length0 = gridBuffer[0].length; 
-        
-    if( i < length0 )
-    {
-        int width = gridBuffer[0].width;
-        int height = gridBuffer[0].height;
-        
-        float cellArea = cellSize * cellSize;
-        
-        int y0 = i / width;
-        int x0 = i - y0 * width;
- 
-        outCellBuffer[i].pos = inCellBuffer[i].pos;
-        outCellBuffer[i].force = inCellBuffer[i].force;
-
-        float2 iOffset = inCellBuffer[i].vel * deltaTime;
-        float offsetAreaRatio = CellOffsetArea( inCellBuffer[i].pos, iOffset) / cellArea;
-        outCellBuffer[i].mass = inCellBuffer[i].mass - inCellBuffer[i].mass * offsetAreaRatio;
-        
-        if (outCellBuffer[i].mass < 0)
-        {
-            outCellBuffer[i].mass = 0;
-        }
-                    
-        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;
-        outCellBuffer[i].color = saturate( inCellBuffer[i].color - inCellBuffer[i].color * offsetAreaRatio );       
-
-        for (int dy0 = -1; dy0 <= 1; dy0++)
-        {
-            for (int dx0 = -1; dx0 <= 1; dx0++)
-            {
-                if (!(dy0 == 0 && dx0 == 0))
-                {
-                    int y1 = y0 + dy0;
-                    int x1 = x0 + dx0;
-                    
-                    if (x1 >= 0 && x1 < width && y1 >= 0 && y1 < height)
-                    {
-                        int j = y1 * width + x1;
-                    
-                        float2 jOffset = inCellBuffer[j].vel * deltaTime;
-                        float overlappingArea = CellOverlappingArea( inCellBuffer[i].pos, inCellBuffer[j].pos + jOffset, cellSize);
-                        if (overlappingArea > 0)
-                        {
-                            float overlappingAreaRatio = overlappingArea / cellArea;                             
-                            float dm = inCellBuffer[j].mass * overlappingAreaRatio;                            
-                            outCellBuffer[i].mass += dm;
-                            outCellBuffer[i].vel += inCellBuffer[j].vel * dm;                                
-                            outCellBuffer[i].color = saturate( outCellBuffer[i].color + outCellBuffer[j].color * overlappingAreaRatio );
+                            int j = y1 * width + x1;
+                            
+                            float2 p1 = float2( x1 * cellSize + cellSize / 2, y1 * cellSize + cellSize / 2 );
+                            float m1 = inOutCellBuffer[j].mass;
+                            force += GravityForce( p0, m0, p1, m1 );
                         }                        
                     }
                 }
             }
-        }
+            */
+                    
+            int offset = 3;
+            int maxOffset = max(width,height);                
+            while( offset <= maxOffset )
+            {
+                int halfOffset = offset / 2;
             
-        if (outCellBuffer[i].mass > 0 )
-        {
-            outCellBuffer[i].vel = outCellBuffer[i].vel / outCellBuffer[i].mass;              
+                for (int dy0 = -1; dy0 <= 1; dy0++)
+                {
+                    for (int dx0 = -1; dx0 <= 1; dx0++)
+                    {                
+                        if ( !(dy0 == 0 && dx0 == 0) )
+                        {
+                            int y1 = y0 + dy0 * offset;
+                            int x1 = x0 + dx0 * offset;
+                            
+                            int yMin = max( 0, y1 - halfOffset - 1 );
+                            int xMin = max( 0, x1 - halfOffset - 1 );                        
+                            int yMax = min( height - 1, y1 + halfOffset );
+                            int xMax = min( width - 1, x1 + halfOffset );
+                            
+                            if( yMin < yMax && xMin < xMax )
+                            {
+                                int iMinMin = yMin * width + xMin;
+                                int iMaxMin = yMin * width + xMax;
+                                int iMaxMax = yMax * width + xMax;
+                                int iMinMax = yMax * width + xMin;                                   
+                                                        
+                                float3 massSATSample = inOutMassSATBuffer[iMaxMax] -
+                                                       inOutMassSATBuffer[iMinMax] -                                                     
+                                                       inOutMassSATBuffer[iMaxMin] +
+                                                       inOutMassSATBuffer[iMinMin];
+                                      
+                                float virtualCellMass = massSATSample.x;
+                                float virtualCellWeight = massSATSample.x;                            
+                                float2 virtualCellPos = massSATSample.yz;
+                                if( virtualCellWeight > EPSILON )
+                                {
+                                    virtualCellPos = virtualCellPos / virtualCellWeight;
+                                }
+                                
+                                /* uncomment to turn off the effect of center-of-masses */
+                                /* 
+                                float lx = (xMin+1) * cellSize + cellSize / 2;
+                                float rx = xMax * cellSize + cellSize / 2;
+                                float ty = (yMin+1) * cellSize + cellSize / 2;
+                                float by = yMax * cellSize + cellSize / 2;
+                                
+                                virtualCellPos = ( float2(lx,ty) +
+                                                          float2(rx,ty) +
+                                                          float2(rx,by) +
+                                                          float2(lx,by) ) / 4; 
+                                */
+                                                         
+                                force += GravityForce( p0, m0, virtualCellPos, virtualCellMass );                                                   
+                            }
+                        }
+                    }
+                }
+                
+                offset *= 3;
+            }                    
+            inOutCellBuffer[i].force = force;
         }
         else
         {
-            outCellBuffer[i].vel = float2( 0, 0 );
+            inOutCellBuffer[i].force = float2( 0, 0 );
         }
-    }
-    else
-    {
-        outCellBuffer[i].force = inCellBuffer[i].force;
-        outCellBuffer[i].mass = inCellBuffer[i].mass;
-        outCellBuffer[i].color = inCellBuffer[i].color;
-        outCellBuffer[i].vel = inCellBuffer[i].vel;
-	    outCellBuffer[i].pos = inCellBuffer[i].pos;
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel LocalExpansion
+#pragma kernel CleanupMassPropagationBuffer
 
 [numthreads(GROUPSIZE,1,1)]
-void LocalExpansion(uint3 id : SV_DispatchThreadID)
+void CleanupMassPropagationBuffer(uint3 id : SV_DispatchThreadID)
 {
-    int i = int(id.x);
+    int i = int(id.x);  
     
-    int length0 = gridBuffer[0].length; 
-        
-    if( i < length0 )
-    {
-        int width = gridBuffer[0].width;
-        int height = gridBuffer[0].height;         
-        
-        float cellArea = cellSize * cellSize;
-        
-        int y0 = i / width;
-        int x0 = i - y0 * width;
-        
-        float expansionVel = inCellBuffer[i].mass * density / cellArea;         
-        float expandedCellSize = cellSize + expansionVel * deltaTime;
-        float expandedCellArea = expandedCellSize * expandedCellSize;
-        
-        outCellBuffer[i].mass = inCellBuffer[i].mass * cellArea / expandedCellArea;
-        outCellBuffer[i].vel = inCellBuffer[i].vel * outCellBuffer[i].mass;  
-        
-        for (int dy0 = -1; dy0 <= 1; dy0++)
+    if( i < width*height )
+    {   
+        int stride = numMassPropagationIndices+1;
+        int offset = i * stride;         
+        for( int j = 0; j<stride; j++ )
         {
-            for (int dx0 = -1; dx0 <= 1; dx0++) 
+            inOutMassPropagationBuffer[offset+j] = 0;
+        }     
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel MassPropagationPrepass
+
+float4 EvaluateRK4(float4 initial, float dt, float4 d, float2 acceleration)
+{
+    float4 state = initial + d * dt;    
+    return float4( state.zw, acceleration );
+}
+
+[numthreads(GROUPSIZE,1,1)]
+void MassPropagationPrepass(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);  
+    
+    if( i < width*height )
+    {                
+        if( inCellBuffer[i].mass > EPSILON )
+        {
+            int y = i / width;
+            int x = i - y * width;
+        
+            float2 cellExtents = float2( cellSize, cellSize );
+            float2 cellHalfExtents = cellExtents / 2;
+            
+            //float2 cellOffset = inCellBuffer[i].vel * deltaTime;
+            
+            float2 cellOffset = 0;
+            if( inCellBuffer[i].mass > EPSILON )
             {
-                if (!(dy0 == 0 && dx0 == 0))
+                float2 acceleration = inCellBuffer[i].force / inCellBuffer[i].mass; 
+                float4 state = float4( float2(0,0), inCellBuffer[i].vel );           
+                float4 a = EvaluateRK4( state, 0.0, float4( 0,0,0,0 ), acceleration );
+                float4 b = EvaluateRK4( state, deltaTime*0.5f, a, acceleration );
+                float4 c = EvaluateRK4( state, deltaTime*0.5f, b, acceleration );
+                float4 d = EvaluateRK4( state, deltaTime, c, acceleration );
+                
+                float2 dPosDt = 1.0f / 6.0f * ( a.xy + 2.0f * ( b.xy + c.xy ) + d.xy );
+                float2 dVelDt = 1.0f / 6.0f * ( a.zw + 2.0f * ( b.zw + c.zw ) + d.zw );
+                
+                cellOffset = dPosDt * deltaTime;
+                inCellBuffer[i].vel += dVelDt * deltaTime;
+            }         
+             
+            float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents + cellOffset;
+            float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
+            
+            float expansionVel = inCellBuffer[i].mass * density / (cellSize*cellSize);         
+            float expansion = ( expansionVel * deltaTime ) / 2;
+            cellRect += float4( -expansion, -expansion, expansion, expansion );
+            
+            inOutCellRectBuffer[i] = cellRect;
+            
+            int2 xyInf = floor( cellRect.xy / cellSize );
+            int2 xySup = floor( cellRect.zw / cellSize );
+            
+            int massPropagationStride = numMassPropagationIndices + 1;        
+            
+            for (int y1 = xyInf.y; y1 <= xySup.y; y1++)
+            {
+                for (int x1 = xyInf.x; x1 <= xySup.x; x1++)
                 {
-                    int y1 = y0 + dy0;
-                    int x1 = x0 + dx0;
+                    int j = y1 * width + x1;
                     
-                    if (x1 >= 0 && x1 < width && y1 >= 0 && y1 < height)
+                    int massPropagationOffset = j * massPropagationStride;
+                    
+                    int writeIndex;
+                    InterlockedAdd( inOutMassPropagationBuffer[massPropagationOffset], 1, writeIndex );
+                    
+                    if( writeIndex < numMassPropagationIndices )
                     {
-                        int j = y1 * width + x1;
-                        
-                        expansionVel = inCellBuffer[j].mass * density / cellArea;         
-                        expandedCellSize = cellSize + expansionVel * deltaTime;
-                        expandedCellArea = expandedCellSize * expandedCellSize;
-                        
-                        float overlappingArea = CellOverlappingArea( inCellBuffer[i].pos, inCellBuffer[j].pos, cellSize, expandedCellSize);
-                        if( overlappingArea > 0 )
-                        {
-                            float overlappingAreaRatio = overlappingArea / expandedCellArea;
-                            float dm = inCellBuffer[j].mass * overlappingAreaRatio;
-                            outCellBuffer[i].mass += dm;
-                            float2 expVel = outCellBuffer[j].vel; // + normalize( inCellBuffer[i].pos - inCellBuffer[j].pos ) * expansionVel;
-                            outCellBuffer[i].vel += expVel * dm;     
-                        }
+                        inOutMassPropagationBuffer[massPropagationOffset+writeIndex+1] = i;
                     }
                 }
             }
         }
-        
-        if (outCellBuffer[i].mass > 0 )
-        {
-            outCellBuffer[i].vel = outCellBuffer[i].vel / outCellBuffer[i].mass;              
-        }
-        else
-        {
-            outCellBuffer[i].vel = float2( 0, 0 );
-        }
-        outCellBuffer[i].vel = inCellBuffer[i].vel;                  
-        outCellBuffer[i].force = inCellBuffer[i].force;        
-        outCellBuffer[i].color = inCellBuffer[i].color;        
-	    outCellBuffer[i].pos = inCellBuffer[i].pos;                      
-    }
-    else
-    {
-        outCellBuffer[i].force = inCellBuffer[i].force;
-        outCellBuffer[i].mass = inCellBuffer[i].mass;
-        outCellBuffer[i].color = inCellBuffer[i].color;
-        outCellBuffer[i].vel = inCellBuffer[i].vel;
-	    outCellBuffer[i].pos = inCellBuffer[i].pos;
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel ScaleCells
+#pragma kernel MassPropagationPass
 
-int xInf;
-int yInf;
-int xSup;
-int ySup;
-float2 oldGridPos;
-float2 newGridPos;
-float scaledCellSize;
-float scaledCellArea;
+float4 IntersectRects(float4 rect1, float4 rect2)  
+{
+    return float4
+    (
+        min( max( rect1.x, rect2.x ), rect2.z ),
+        min( max( rect1.y, rect2.y ), rect2.w ),
+        max( min( rect1.z, rect2.z ), rect2.x ),
+        max( min( rect1.w, rect2.w ), rect2.y )
+    );
+}
+
+float RectArea(float4 rect)
+{
+    return (rect.z-rect.x)*(rect.w-rect.y);
+}
 
 [numthreads(GROUPSIZE,1,1)]
-void ScaleCells(uint3 id : SV_DispatchThreadID)
+void MassPropagationPass(uint3 id : SV_DispatchThreadID)
 {
-    int i = int(id.x);
+    int i = int(id.x);  
     
-    int length = gridBuffer[0].length; 
-        
-    if( i < length )
+    if( i < width*height )
     {
-        int width = gridBuffer[0].width;
-        int height = gridBuffer[0].height;
-        
-        int y0 = i / width;
-        int x0 = i - y0 * width;
-        
-        outCellBuffer[i].pos = newGridPos + float2( x0 * scaledCellSize + scaledCellSize/2, y0 * scaledCellSize + scaledCellSize/2 );
-        
-        float2 neighbourInf = outCellBuffer[i].pos - float2( scaledCellSize/2, scaledCellSize/2 );
-        float2 neighbourSup = outCellBuffer[i].pos + float2( scaledCellSize/2, scaledCellSize/2 );
-        neighbourInf -= oldGridPos;
-        neighbourSup -= oldGridPos;
-        
-        int localXInf = floor( neighbourInf.x / cellSize );
-        int localYInf = floor( neighbourInf.y / cellSize );
-        int localXSup = ceil( neighbourSup.x / cellSize );
-        int localYSup = ceil( neighbourSup.y / cellSize );
-        
-        float mass = 0;
-        float2 vel = float2( 0, 0 );
-        float4 color = float4( 0, 0, 0, 0 );
-        float2 force = float2( 0, 0 );
-        
-        for (int y1 = localYInf; y1 <= localYSup; y1++)
+        int massPropagationStride = numMassPropagationIndices + 1;
+        int massPropagationOffset = i * massPropagationStride;
+        int count = min( inOutMassPropagationBuffer[massPropagationOffset], numMassPropagationIndices );
+        if( count > 0 )
         {
-            for (int x1 = localXInf; x1 <= localXSup; x1++) 
+            int y = i / width;
+            int x = i - y * width;
+        
+            float2 cellExtents = float2( cellSize, cellSize );
+            float2 cellHalfExtents = cellExtents / 2;
+        
+            float2 cellPos = float2( x, y ) * cellSize + cellHalfExtents;
+            float4 cellRect = float4( cellPos - cellHalfExtents, cellPos + cellHalfExtents );
+        
+            float cellMass = 0;
+            float2 cellMassVel = float2( 0, 0 );
+             
+            for (int j = 0; j <= count; j++)
             {
-                if( y1 >= 0 && y1 < height && x1 >= 0 && x1 < width )
-                {
-                    int j = y1 * width + x1;
-                    
-                    float overlappingArea = CellOverlappingArea( outCellBuffer[i].pos, inCellBuffer[j].pos, scaledCellSize, cellSize);                    
-                    float overlappingAreaRatio = overlappingArea / cellArea;
-                    
-                    mass += inCellBuffer[j].mass * overlappingAreaRatio;
-                    vel += inCellBuffer[j].vel * inCellBuffer[j].mass * overlappingAreaRatio;
-                    color += inCellBuffer[j].color * inCellBuffer[j].mass * overlappingAreaRatio;
-                    force += inCellBuffer[j].force * overlappingAreaRatio;
-                }
+                int k = inOutMassPropagationBuffer[massPropagationOffset+j+1];            
+            
+                float4 otherCellRect = inOutCellRectBuffer[k];            
+                float4 intersectionRect = IntersectRects( cellRect, otherCellRect );
+                float intersectionRectArea = RectArea( intersectionRect );
+            
+                if( intersectionRectArea > EPSILON )
+                {            
+                    float otherCellRectArea = RectArea( otherCellRect );
+                    float intersectionRectAreaRatio = intersectionRectArea / otherCellRectArea;
+                    float deltaMass = intersectionRectAreaRatio * inCellBuffer[k].mass;
+                    cellMass += deltaMass;
+                    cellMassVel += deltaMass * inCellBuffer[k].vel;
+                } 
             }
-        }
         
-        outCellBuffer[i].mass = mass;
-        outCellBuffer[i].force = force;
-        if (mass > 0 )
-        {
-            outCellBuffer[i].vel = vel / mass;
-            outCellBuffer[i].color = color / mass;              
+            if( cellMass > EPSILON && i != 0 ) 
+            {
+                outCellBuffer[i].mass = cellMass;
+                outCellBuffer[i].vel = cellMassVel / cellMass;
+                outCellBuffer[i].force = inCellBuffer[i].force;
+            }
+            else
+            {
+                outCellBuffer[i].mass = 0;
+                outCellBuffer[i].vel = float2( 0, 0 );
+                outCellBuffer[i].force = float2( 0, 0 );
+            }            
         }
         else
         {
-            outCellBuffer[i].vel = float2(0,0);
-            outCellBuffer[i].color = float4(0,0,0,0);
+            outCellBuffer[i].mass = 0;
+            outCellBuffer[i].vel = float2( 0, 0 );
+            outCellBuffer[i].force = float2( 0, 0 );
+        } 
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel InitMassSAT
+
+[numthreads(GROUPSIZE,1,1)]
+void InitMassSAT(uint3 id : SV_DispatchThreadID)
+{ 
+    int i = int(id.x);
+    
+    int length = width * height; 
+        
+    if( i < length )
+    {
+        int y = i / width;
+        int x = i - y * width;
+        
+        float mass = inCellBuffer[i].mass;
+        float2 pos = float2( x * cellSize + cellSize / 2, y * cellSize + cellSize / 2 );   
+        
+        outMassSATBuffer[i] = float3( mass, pos * mass );
+    }    
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel TransposeMassSAT
+
+[numthreads(GROUPSIZE,1,1)]
+void TransposeMassSAT(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+    
+    if( i < width*height )
+    {
+        int y = i / width;
+        int x = i - y * width;
+        int j = x * height + y; 
+    
+        outMassSATBuffer[i] = inMassSATBuffer[j];
+    }    
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ComputeMassSAT
+
+[numthreads(GROUPSIZE,1,1)]
+void ComputeMassSAT(uint3 id : SV_DispatchThreadID)
+{
+    int y = int(id.x);
+    
+    if (y < height)
+    {
+        int index = y*width;
+        float3 accumulatedMass = inMassSATBuffer[index]; 
+        outMassSATBuffer[index] = accumulatedMass;        
+        index++;
+         
+        for( int x=1; x<width; x++, index++)
+        {
+            accumulatedMass += inMassSATBuffer[index];
+            outMassSATBuffer[index] = accumulatedMass;
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel ComputeRowStats
+
+[numthreads(GROUPSIZE,1,1)]
+void ComputeRowStats(uint3 id : SV_DispatchThreadID)
+{
+    int y = int(id.x);
+    
+    if (y < height)
+    {
+        RowStats rowStats; 
+    
+        int index = y*width;
+        rowStats.maxMass = inCellBuffer[index].mass;
+        rowStats.maxVel = length( inCellBuffer[index].vel );
+        rowStats.totalMass = inCellBuffer[index].mass;
+        index++;
+
+        for( int x=1; x<width; x++, index++)
+        {
+            rowStats.maxMass = max( rowStats.maxMass, inCellBuffer[index].mass );
+            rowStats.maxVel = max( rowStats.maxVel, length( inCellBuffer[index].vel ) );
+            rowStats.totalMass += inCellBuffer[index].mass;
+        }
+        
+        outRowStatsBuffer[y] = rowStats;        
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawMassSAT
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawMassSAT(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+        
+    if( i < width*height )
+    {        
+        int y = i / width;
+        int x = i - y * width;        
+        
+        int2 xy = int2( x,y );
+        
+        const float Mass0 = 0.1;
+        const float Mass1 = 1.0;
+        const float Mass2 = 10;
+        const float Mass3 = 100;
+        const float Mass4 = 1000;
+        const float Mass5 = 10000;
+        const float Mass6 = 100000;
+        
+        const half4 VacuumColor = half4( 0,0,0,0 );
+        const half4 Color0 = half4( 0.0625, 0, 0.5, 1 );
+        const half4 Color1 = half4( 0,0,1,1 );
+        const half4 Color2 = half4( 0,0.25,0.75,1 );
+        const half4 Color3 = half4( 0,1,0,1 );
+        const half4 Color4 = half4( 1,1,0,1 );
+        const half4 Color5 = half4( 1,0,0,1 );
+        const half4 Color6 = half4( 1,1,1,1 );
+        
+        float mass = inOutMassSATBuffer[i].x;
+        if( mass < Mass0 )
+        {
+            renderTexture[xy] = lerp( VacuumColor, Color0, mass / Mass0 );   
+        } 
+        else if( mass < Mass1 )
+        {
+            renderTexture[xy] = lerp( Color0, Color1, (mass-Mass0) / (Mass1-Mass0) );
+        }
+        else if( mass < Mass2 )
+        {
+            renderTexture[xy] = lerp( Color1, Color2, (mass-Mass1) / (Mass2-Mass1) );
+        }
+        else if( mass < Mass3 )
+        {
+            renderTexture[xy] = lerp( Color2, Color3, (mass-Mass2) / (Mass3-Mass2) );
+        }
+        else if( mass < Mass4 )
+        {
+            renderTexture[xy] = lerp( Color3, Color4, (mass-Mass3) / (Mass4-Mass3) );
+        }
+        else if( mass < Mass5 )
+        {
+            renderTexture[xy] = lerp( Color4, Color5, (mass-Mass4) / (Mass5-Mass4) );
+        }
+        else 
+        {
+            renderTexture[xy] = lerp( Color5, Color6, (mass-Mass5) / (Mass6-Mass5) );
         }
     }
 }
@@ -687,39 +730,13 @@ void DrawMasses(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
         
-    if( i < gridBuffer[0].length )
+    if( i < width*height )
     {        
-        int y = i / gridBuffer[0].width;
-        int x = i - y * gridBuffer[0].width;        
+        int y = i / width;
+        int x = i - y * width;        
         
         int2 xy = int2( x,y );
-        
-        const float Mass0 = 0.001;
-        const float Mass1 = 0.01;
-        const float Mass2 = 0.1;
-        const float Mass3 = 1;
-        const float Mass4 = 10;
-        
-        if( inOutCellBuffer[i].mass < Mass0 )
-        {
-            renderTexture[xy] = lerp( half4(0,0,0,1), half4(0,0,1,1), inOutCellBuffer[i].mass / Mass0 );   
-        } 
-        else if( inOutCellBuffer[i].mass < Mass1 )
-        {
-            renderTexture[xy] = lerp( half4(0,0,1,1), half4(0,1,0,1), (inOutCellBuffer[i].mass-Mass0) / (Mass1-Mass0) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass2 )
-        {
-            renderTexture[xy] = lerp( half4(0,1,0,1), half4(1,1,0,1), (inOutCellBuffer[i].mass-Mass1) / (Mass2-Mass1) );
-        }
-        else if( inOutCellBuffer[i].mass < Mass3 )
-        {
-            renderTexture[xy] = lerp( half4(1,1,0,1), half4(1,0,0,1), (inOutCellBuffer[i].mass-Mass2) / (Mass3-Mass2) );
-        }
-        else
-        {
-            renderTexture[xy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (inOutCellBuffer[i].mass-Mass3) / (Mass4-Mass3) );
-        }
+        renderTexture[xy] = MassToColor( inOutCellBuffer[i].mass );   
     }
 }
 
@@ -732,31 +749,31 @@ void DrawMomentums(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
         
-    if( i < gridBuffer[0].length )
+    if( i < width*height )
     {        
-        int y = i / gridBuffer[0].width;
-        int x = i - y * gridBuffer[0].width;        
+        int y = i / width;
+        int x = i - y * width;        
         
         int2 xy = int2( x,y );
         
-        const float VelocityScale = 10.0;
+        const float VelocityScale = 1.0;
        
         float2 vel = inOutCellBuffer[i].vel;
-        float mag = length(vel);
+        float mag = length(vel) * inOutCellBuffer[i].mass;
         vel = normalize(vel);
-               
-        vel = ( vel + 1.0 ) * 0.5;
-        vel *= saturate( mag / VelocityScale );
-        vel *= sign( inOutCellBuffer[i].mass );
         
-        const float Mass0 = 0.0f;
-        const float Mul0 = 0.0f;
-        const float Mass1 = 0.1f;
-        const float Mul1 = 1.0f;
-        float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
-        vel *= lerp( Mul0, Mul1, factor );      
+        // LOG: 0.0000001 0.000001 0.00001 0.000   0.001   0.01    0.1     1.0    10.0   100.0  1000.0
+        // LIN: 0.0563    0.0750   0.1001  0.1334  0.1779  0.2373  0.3164  0.4218  0.5625  0.75    1.0
+        
+        float hue = Angle360( vel, float2(1,0) ) / 360;
+        float value = LogToLinear( mag, 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );
        
-        renderTexture[xy] = half4( vel, 0, 1 );           
+        //renderTexture[xy] = half4( vel, 0, 1 );
+        renderTexture[xy] = half4( HSV2RGB( float3(hue,1,value) ), 1 );
+        
+        // legend        
+        const float LegendScale = 0.25f;        
+        renderTexture[xy] = DrawLegend( x, y, LegendScale, renderTexture[xy] );           
     }
 }
 
@@ -769,82 +786,215 @@ void DrawForces(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
         
-    if( i < gridBuffer[0].length )
+    if( i < width*height )
     {        
-        int y = i / gridBuffer[0].width;
-        int x = i - y * gridBuffer[0].width;        
+        int y = i / width;
+        int x = i - y * width;        
         
         int2 xy = int2( x,y );
-        
-        const float ForceScale = 0.1;
        
         float2 force = inOutCellBuffer[i].force;
         float mag = length(force);
         force = normalize(force);
-               
-        force = ( force + 1.0 ) * 0.5;
-        force *= saturate( mag / ForceScale );
-        force *= sign( inOutCellBuffer[i].mass );
+    
+        // LOG: 0.0000001 0.000001 0.00001 0.000   0.001   0.01    0.1     1.0    10.0   100.0  1000.0
+        // LIN: 0.0563    0.0750   0.1001  0.1334  0.1779  0.2373  0.3164  0.4218  0.5625  0.75    1.0
         
-        const float Mass0 = 0.0f;
-        const float Mul0 = 0.0f;
-        const float Mass1 = 0.1f;
-        const float Mul1 = 1.0f;
-        float factor = saturate( ( inOutCellBuffer[i].mass - Mass0 ) / ( Mass1 - Mass0 ) );
-        force *= lerp( Mul0, Mul1, factor );
-       
-        renderTexture[xy] = half4( force, 0, 1 );           
+        float hue = Angle360( force, float2(1,0) ) / 360;                
+        float value = LogToLinear( mag, 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );                 
+                 
+        renderTexture[xy] = half4( HSV2RGB( float3(hue,1,value) ), 1 );
+        
+        // legend        
+        const float LegendScale = 0.25f;        
+        renderTexture[xy] = DrawLegend( x, y, LegendScale, renderTexture[xy] );
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma kernel DrawNodes
+#pragma kernel DrawPropagation
 
 [numthreads(GROUPSIZE,1,1)]
-void DrawNodes(uint3 id : SV_DispatchThreadID)
+void DrawPropagation(uint3 id : SV_DispatchThreadID)
 {
     int i = int(id.x);
-    
-    if( i < gridBuffer[gridIndex].length )
-    {
-        int y = i / gridBuffer[gridIndex].width;
-        int x = i - y * gridBuffer[gridIndex].width;        
+        
+    if( i < width*height )
+    {        
+        int y = i / width;
+        int x = i - y * width;        
         
         int2 xy = int2( x,y );
         
-        //int gridScale = pow( 3, gridIndex );
-        int nodeX = x;// / gridScale;
-        int nodeY = y;// / gridScale;
-        int nodeIndex = nodeY * gridBuffer[gridIndex].width + nodeX + gridBuffer[gridIndex].start; 
-       
-        const float Mass0 = 0.01;
-        const float Mass1 = 0.1;
-        const float Mass2 = 1;
-        const float Mass3 = 10;
-        const float Mass4 = 100;
+        int massPropagationStride = numMassPropagationIndices + 1;
+        int massPropagationOffset = i * massPropagationStride;
+        int count = inOutMassPropagationBuffer[massPropagationOffset];
+                       
+        renderTexture[xy] = NumPropagationIndicesToColor( count );
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawSyntheticImage
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawSyntheticImage(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
         
-        float nodeMass = nodeBuffer[nodeIndex].mass;
+    if( i < width*height )
+    {        
+        int y = i / width;
+        int x = i - y * width;        
         
-        if( nodeMass < Mass0 )
+        int2 xy = int2( x,y );
+        
+        half4 result = half4(0,0,0,1);
+        result.r = LogToLinear( inOutCellBuffer[i].mass, 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );                
+        result.g = LogToLinear( length(inOutCellBuffer[i].vel) * inOutCellBuffer[i].mass, 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );
+        result.b = LogToLinear( length(inOutCellBuffer[i].force), 0.0000001, 1000.0, 0.0563135147, 1.0/0.75 );
+        
+        renderTexture[xy] = result; 
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel DrawScopeImage
+
+float SDTriangleIsosceles(float2 p, float2 q)
+{
+    // Inigo Quilez
+    // https://www.iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
+
+    p.x = abs(p.x);
+    float2 a = p - q * clamp( dot(p,q)/dot(q,q), 0.0, 1.0 );
+    float2 b = p - q * float2( clamp( p.x/q.x, 0.0, 1.0 ), 1.0 );
+    float s = -sign( q.y );
+    float2 d = min( float2( dot(a,a), s*(p.x*q.y-p.y*q.x) ),
+                    float2( dot(b,b), s*(p.y-q.y)  ));
+    return -sqrt(d.x) * sign(d.y);
+}
+
+[numthreads(GROUPSIZE,1,1)]
+void DrawScopeImage(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+    
+    int renderTextureWidth = scopeWindowWidth * scopeCellResolution;
+    int renderTextureHeight = scopeWindowHeight * scopeCellResolution; 
+          
+    if( i < renderTextureWidth * renderTextureHeight )
+    {
+        int y = i / renderTextureWidth;
+        int x = i - y * renderTextureWidth;
+        int2 xy = int2( x, y );
+        
+        int cy = y / scopeCellResolution;
+        int cx = x / scopeCellResolution;
+        
+        int py = y % scopeCellResolution;
+        int px = x % scopeCellResolution;
+        
+        if( py <= 1 || px <= 1 )
         {
-            renderTexture[xy] = lerp( half4(0,0,0,1), half4(0,0,1,1), nodeMass / Mass0 );   
-        } 
-        else if( nodeMass < Mass1 )
-        {
-            renderTexture[xy] = lerp( half4(0,0,1,1), half4(0,1,0,1), (nodeMass-Mass0) / (Mass1-Mass0) );
-        }
-        else if( nodeMass < Mass2 )
-        {
-            renderTexture[xy] = lerp( half4(0,1,0,1), half4(1,1,0,1), (nodeMass-Mass1) / (Mass2-Mass1) );
-        }
-        else if( nodeMass < Mass3 )
-        {
-            renderTexture[xy] = lerp( half4(1,1,0,1), half4(1,0,0,1), (nodeMass-Mass2) / (Mass3-Mass2) );
+            renderTexture[xy] = half4( 0.25, 0.25, 0.25, 1 );
         }
         else
         {
-            renderTexture[xy] = lerp( half4(1,0,0,1), half4(1,1,1,1), (nodeMass-Mass3) / (Mass4-Mass3) );
+            renderTexture[xy] = half4( 1, 1, 1, 1 );
         }
-    }           
+        
+        if( py > 1 && px > 1 && py < scopeCellResolution && px < scopeCellResolution )
+        {
+            int cellX = scopePosX + cx;
+            int cellY = scopePosY + cy;
+            int cellIndex = cellY * width + cellX;
+            renderTexture[xy] = saturate( MassToColor( inOutCellBuffer[cellIndex].mass ) );
+               
+            float2 vel = inOutCellBuffer[cellIndex].vel;
+            float magnitude = length(vel);
+            if( magnitude > EPSILON )
+            {
+                float2 dir = vel / magnitude;
+                
+                float2 triangleSize = float2( scopeCellResolution / 8, scopeCellResolution / 2 );
+                
+                float angle = radians( Angle360( dir, float2(0.0,-1.0) ) );
+                float2x2 rm = float2x2( cos(angle), -sin(angle), sin(angle), cos(angle) );
+                
+                float2 p = float2( px, py ) - float2(scopeCellResolution,scopeCellResolution) / 2;                
+                p = mul( rm, p );
+                p.y += triangleSize.y/2;
+                
+                float distance = SDTriangleIsosceles( p, triangleSize );
+                float outline = smoothstep( 0.0, scopeCellResolution/16, distance ) + ( 1.0 - smoothstep( -scopeCellResolution/16, 0, distance ) );                                                 
+                renderTexture[xy] *= outline;
+            }
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+
+#pragma kernel BicubicDownsample
+
+float Bell( float x )
+{
+	float f = ( x / 2.0 ) * 1.5; // Converting -2 to +2 to -1.5 to +1.5
+	if( f > -1.5 && f < -0.5 )
+	{
+		return( 0.5 * pow(f + 1.5, 2.0));
+	}
+	else if( f > -0.5 && f < 0.5 )
+	{
+		return 3.0 / 4.0 - ( f * f );
+	}
+	else if( ( f > 0.5 && f < 1.5 ) )
+	{
+		return( 0.5 * pow(f - 1.5, 2.0));
+	}
+	return 0.0;
+}
+
+[numthreads(GROUPSIZE,1,1)]
+void BicubicDownsample(uint3 id : SV_DispatchThreadID)
+{
+    int i = int(id.x);
+          
+    if( i < downsampledWidth * downsampledHeight )
+    {
+        int y = i / downsampledWidth;
+        int x = i - y * downsampledWidth;
+        int2 xy = int2( x, y );
+        
+        float2 uv = float2( x, y ) / float2( downsampledWidth, downsampledHeight );
+        
+        float4 nSum = float4( 0.0, 0.0, 0.0, 0.0 );
+        float4 nDenom = float4( 0.0, 0.0, 0.0, 0.0 );
+        float a = frac( uv.x * originalWidth );
+        float b = frac( uv.y * originalHeight );
+        
+        int2 oxy0 = int2( uv * float2( originalWidth, originalHeight ) );
+        
+        for( int m = -1; m <=2; m++ )
+        {
+            for( int n =-1; n<= 2; n++)
+            {
+                int2 oxy1 = oxy0 + int2( m, n );
+                        
+                float4 vecData = inRenderTexture[oxy1];
+			    float f  = Bell( float( m ) - a );
+			    float4 vecCooef1 = float4( f,f,f,f );
+			    float f1 = Bell( -( float( n ) - b ) );
+			    float4 vecCoeef2 = float4( f1, f1, f1, f1 );
+                nSum = nSum + ( vecData * vecCoeef2 * vecCooef1  );
+                nDenom = nDenom + (( vecCoeef2 * vecCooef1 )); 
+            }
+        }
+        
+        outRenderTexture[xy] = nSum / nDenom;  
+    }
 }
